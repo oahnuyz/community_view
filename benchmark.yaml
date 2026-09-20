@@ -1,0 +1,10 @@
+# ScholarQA-Multi 前 92 条 QA；按 prepared/qa.jsonl 原始文件顺序取样，不按 ID 重新排序。
+# 路径相对此文件；模型与检索参数继续使用 --config 指定的主配置。
+dataset_dir: data/benchmarks/scholarqa_multi_valid_101 # 从服务器同步的 prepared 数据集目录。
+output_dir: data/runs/scholarqa_first_92 # 保存选择清单、合并的每题结果（含 gold）、轨迹和汇总。
+database: data/runs/scholarqa_first_92/index.sqlite3 # 本实验独立索引，避免混入其他文档。
+log_file: data/runs/scholarqa_first_92/run.log # 本实验的入库、聚类及问答日志。
+start: 0 # QA 起始偏移，从 0 开始；0 表示第一条。
+count: 92 # QA 数；null 表示从 start 到文件末尾，数量不足时明确报错。
+modes: [naive] # 要运行的模式：可设 [naive] 或 [community, naive]，共用同一份入库数据。
+concurrency: 2 # 问答和 LLM 评分共用的并发数；每题问答的历史及社区去重记录独立。

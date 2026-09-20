@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "community-wiki"
+version = "0.1.0"
+description = "Document communities and agentic retrieval"
+requires-python = ">=3.12"
+dependencies = [
+  "httpx>=0.28,<1", "pydantic>=2.10,<3", "PyYAML>=6,<7",
+  "numpy>=2,<3", "scikit-learn>=1.6,<2", "igraph>=0.11,<2",
+  "leidenalg>=0.10,<1", "pypdf>=5,<7", "tiktoken>=0.9,<1",
+  "rank-bm25>=0.2.2,<1", "jieba>=0.42.1,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2", "ruff>=0.11,<1"]
+
+[project.scripts]
+community-wiki = "community_wiki.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/community_wiki"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

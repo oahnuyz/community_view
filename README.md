@@ -59,7 +59,7 @@
 | `overview.concurrency` | 6 | 同时处理的文档数 |
 | `overview.fragment_tokens` | 6000 | 单个原文分片的 token 上限 |
 | `overview.summary_max_chars` | 800 | prompt 和 JSON schema 中的文档摘要字符上限 |
-| `overview.summary_validation_max_chars` | 1000 | 本地文档摘要校验上限；其他字段仍按原限制校验 |
+| `overview.summary_validation_max_chars` | 1200 | 当前本地文档摘要校验上限；其他字段仍按原限制校验 |
 | `text.chunk_tokens / chunk_overlap_tokens` | 600 / 80 | chunk 大小 / 目标重叠量 |
 | `graph.mode / neighbor_k` | hybrid / 15 | 建边方式 / 每个通道候选邻居数 |
 | `graph.vector_weight / min_weight` | 0.7 / 0.25 | 混合向量权重 / 保留边阈值 |

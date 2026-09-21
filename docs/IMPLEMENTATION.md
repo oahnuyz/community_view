@@ -36,7 +36,7 @@ flowchart TD
 - 新文档 ID 由数据库分配为 `D0001`、`D0002`……，超过四位自然扩展为 `D10000`。每批按规范绝对路径排序，在并发处理前事务性预留编号，分配顺序不依赖模型完成先后。`document_ids` 保存路径与编号，`meta.document_id_sequence` 保存序号；重启、重试、同路径内容更新都复用编号，失败预留或删除可留下空号，不回收编号。不同数据库独立编号，不是跨库全局 ID。
 - 现有数据库中的旧 ID 保留，避免破坏社区、chunk 和历史 trace。仍使用规范绝对路径识别同一来源；不同路径即使内容相同也视为不同文档。文件删除或移动不会自动删除已有数据。
 - 文档和社区 prompt 使用 `${配置字段名}` 插入当前字符数/关键词数上限，明确字符数包含空格和标点，不是词数或 token 数；要求留出余量并在输出前检查长度。
-- 每篇输出 `title`、`keywords`、`summary`。文档摘要 prompt/schema 上限仍为 800 字符，本地独立按 `summary_validation_max_chars=1000` 校验；标题、关键词、阶段综合与社区 overview 限制不变。关键词不能为空且不允许规范化后重复。超长错误包含实际长度和上限；超过重试次数则该文档失败，不对模型结果静默截断。
+- 每篇输出 `title`、`keywords`、`summary`。文档摘要 prompt/schema 上限仍为 800 字符，本地独立按 `summary_validation_max_chars=1200` 校验；标题、关键词、阶段综合与社区 overview 限制不变。关键词不能为空且不允许规范化后重复。超长错误包含实际长度和上限；超过重试次数则该文档失败，不对模型结果静默截断。
 - 文档按 `fragment_tokens` 拆分；同篇按顺序向模型传入 `fragment_index`、`fragment_count`、`is_final`、`previous_synthesis`、`content`。非最后片返回 `stage_summary`，下一片收到该累计信息；最后片只返回全文 overview。单片文档直接执行最后片分支。
 - `fragment_tokens` 约束原文分片内容，**不是完整 HTTP 请求的 token 总预算**。模型输入还包括前片综合、指令和 schema；需要给模型窗口留余量。长度约束使用 Python Unicode 字符数，不是 token 数。
 - 分片不漏掉后文，且避免在 UTF-8 字符中间切开。阶段摘要本身仍是有损概括，因此“全篇均被处理”不等于“每个细节均保留”；检索仍有原文 chunks 可用。
@@ -181,7 +181,7 @@ doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社�
 | overview.fragment_tokens | 6000 | 长文档原文分片 token 上限 |
 | overview.title_max_chars | 160 | 文档标题最大字符数 |
 | overview.summary_max_chars | 800 | 文档摘要 prompt/schema 字符上限 |
-| overview.summary_validation_max_chars | 1000 | 仅文档摘要本地校验上限 |
+| overview.summary_validation_max_chars | 1200 | 当前仅文档摘要本地校验上限 |
 | text.pdf.strategy | auto | 本地 pdfplumber；也可显式设为 pdfplumber |
 | text.pdf.max_heading_level | 4 | Markdown 标题最大层级 |
 | text.pdf.heading_min_size_ratio | 1.1 | 候选标题字号相对页面主要正文字号的下限 |

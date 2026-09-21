@@ -1,0 +1,7 @@
+# 独立后台队列：运行完一个实验的全部阶段后，再启动下一个。
+config: config.yaml # 两个实验共用模型、摘要限制、检索配置；路径相对此文件。
+output_dir: data/queues/enterprise_then_mdaqa # 队列状态和总日志；各实验仍写入各自结果目录。
+continue_on_error: true # 某个实验失败时保留其错误和结果，仍执行下一项，避免后续实验一直未启动。
+experiments:
+  - benchmark.enterprise.yaml # 复用已有 322 篇文档，补齐入库后继续问答与评分。
+  - benchmark.mdaqa.yaml # 接着新建 MDAQA 索引，完成 naive/community 全部问答与评分。

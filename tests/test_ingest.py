@@ -94,14 +94,32 @@ async def test_prompts_render_configured_length_limits(config, text, client):
     assert all("spaces and punctuation" in prompt for prompt in prompts)
 
 
-@pytest.mark.parametrize("length,accepted", [(800, True), (801, True), (1000, True), (1001, False)])
-async def test_summary_schema_and_local_limit_are_independent(config, text, length, accepted):
+@pytest.mark.parametrize(
+    "limit,length,accepted",
+    [
+        (1000, 800, True),
+        (1000, 801, True),
+        (1000, 1000, True),
+        (1000, 1001, False),
+        (1100, 1001, True),
+        (1100, 1100, True),
+        (1100, 1101, False),
+        (1200, 1160, True),
+        (1200, 1200, True),
+        (1200, 1201, False),
+    ],
+)
+async def test_summary_schema_and_local_limit_are_independent(
+    config, text, limit, length, accepted
+):
+    config.overview.summary_validation_max_chars = limit
+
     class Client:
         async def json_completion(self, system, payload, schema, retries, validate, purpose):
             assert schema["properties"]["summary"]["maxLength"] == 800
             assert payload["output_schema"] == schema
             assert "summary: at most 800 characters" in system
-            assert "1000" not in system
+            assert str(limit) not in system
             value = {"title": "Title", "keywords": ["keyword"], "summary": "a" * length}
             validate(value)
             return value
@@ -110,5 +128,5 @@ async def test_summary_schema_and_local_limit_are_independent(config, text, leng
         result = await document_overview("source", config, text, Client())
         assert len(result.summary) == length
     else:
-        with pytest.raises(ValueError, match="1001 characters; at most 1000"):
+        with pytest.raises(ValueError, match=f"{length} characters; at most {limit}"):
             await document_overview("source", config, text, Client())

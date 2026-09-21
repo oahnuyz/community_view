@@ -53,7 +53,7 @@ overview:
   fragment_tokens: 10000 # 原文分片 token 上限；完整请求还包含累计信息、指令和 schema，需预留窗口。
   title_max_chars: 160 # 文档 title 最大字符数。
   summary_max_chars: 800 # prompt 和 API JSON schema 中要求的摘要字符上限。
-  summary_validation_max_chars: 1000 # 仅程序侧允许的摘要字符上限；不修改 prompt/schema，不直接截断。
+  summary_validation_max_chars: 1200 # 仅程序侧允许的摘要字符上限；不修改 prompt/schema，不直接截断。
   keyword_count: 12 # 关键词数量上限；至少 1 个，规范化后不可重复。
   keyword_max_chars: 80 # 每个关键词或关键词短语的最大字符数。
   stage_max_chars: 2400 # 非最后分片返回的累计综合信息上限；传给下一片继续综合。

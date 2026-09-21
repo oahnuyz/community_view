@@ -31,20 +31,22 @@ flowchart TD
 
 ## 2. 阶段一：文档 overview 与入库
 
-- 接受文件、目录、多路径；目录递归发现配置中的扩展名。TXT/Markdown 使用 UTF-8，PDF 使用 pypdf 读取文字层。扫描件无文字时明确失败。
+- 接受文件、目录、多路径；目录递归发现配置中的扩展名。TXT/Markdown 使用 UTF-8；PDFParser 的 auto 策略使用本地 pdfplumber，逐页 extract_text，保留 `<!-- Page N -->`，优先用 PDF 书签生成 Markdown 标题，无可用书签时按字号推断最多四级标题，逐页 extract_tables 追加 Markdown 表格。页码只在正文中，不增加 chunk 元数据字段；表格文字可能同时存在于正文和 Markdown 表格。不会自动调用 LLM/VLM 或 OCR，整篇无文字/表格时明确失败。
+- PDF 中合法代理字符对恢复为 Unicode 字符，孤立代理字符替换为 U+FFFD 并记录文件、页码和数量。解析报错包含页面信息，表格提取异常保留正文并记录警告。PDF 字号标题是启发式识别，不能保证目录层级、公式或复杂表格完整还原。
 - 文档 ID 是规范绝对路径的 SHA-256。同一路径内容变化时更新该文档；不同路径即使内容相同也视为不同文档。文件删除或移动不会自动删除已有数据。
-- 每篇输出 `title`、`keywords`、`summary`。摘要、标题、单关键词和关键词数都做本地硬上限校验；关键词不能为空且不允许规范化后重复。超长输出要求模型修正，超过重试次数则该文档失败，不对模型结果静默截断。
+- 文档和社区 prompt 使用 `${配置字段名}` 插入当前字符数/关键词数上限，明确字符数包含空格和标点，不是词数或 token 数；要求留出余量并在输出前检查长度。
+- 每篇输出 `title`、`keywords`、`summary`。文档摘要 prompt/schema 上限仍为 800 字符，本地独立按 `summary_validation_max_chars=1000` 校验；标题、关键词、阶段综合与社区 overview 限制不变。关键词不能为空且不允许规范化后重复。超长错误包含实际长度和上限；超过重试次数则该文档失败，不对模型结果静默截断。
 - 文档按 `fragment_tokens` 拆分；同篇按顺序向模型传入 `fragment_index`、`fragment_count`、`is_final`、`previous_synthesis`、`content`。非最后片返回 `stage_summary`，下一片收到该累计信息；最后片只返回全文 overview。单片文档直接执行最后片分支。
 - `fragment_tokens` 约束原文分片内容，**不是完整 HTTP 请求的 token 总预算**。模型输入还包括前片综合、指令和 schema；需要给模型窗口留余量。长度约束使用 Python Unicode 字符数，不是 token 数。
 - 分片不漏掉后文，且避免在 UTF-8 字符中间切开。阶段摘要本身仍是有损概括，因此“全篇均被处理”不等于“每个细节均保留”；检索仍有原文 chunks 可用。
 - 不同文档并发，同篇分片串行。文档 overview 和全部 chunk embedding 成功后，才在一个 SQLite 事务中更新文档与切片。部分文档失败不撤销其他文档的成功结果。
-- 使用原始文件哈希和处理配置签名跳过重复入库。重新运行失败任务时，已成功且未变化的文档不会重复调用模型。
+- 使用原始文件哈希和处理配置签名跳过重复入库。重新运行失败任务时，已成功且未变化的文档不会重复调用模型。签名包含 PDF 解析版本及参数；从旧 pypdf 切换到新流程后旧文档需要重新处理，不能将两种解析流程混为同一个实验索引。
 
 ## 3. 阶段二：切片与搜索索引
 
 原文按 token 切片，默认 600 tokens、目标重叠 80 tokens。Unicode 安全边界可能略微缩短分片和重叠量。切片从 `ordinal=0` 开始编号。表字段只有 `doc_id, ordinal, text, vector`，其中前两个是来源标识，不存页码、章节、重复 title/摘要等信息。
 
-每个文档的 `title + keywords + summary` 生成一份文档向量，每个原文 chunk 生成自己的向量。向量归一化后存为 float32。请求按批处理且可并发，服务返回向量顺序按 index 还原；缺项、零向量、非有限值、维数不一致会失败。不再设置本地 embedding 输入 token 上限，也不截断发送的文本；输入限制由 API 服务端处理。
+每个文档的 `title + keywords + summary` 生成一份文档向量，每个原文 chunk 生成自己的向量。向量归一化后存为 float32。通过 `embedding.api_format` 选择标准批量或多模态文本输入协议；后者每段文本独立请求、仍遵守 embedding 并发上限，不将多段文本融合为一个向量。请求按批处理且可并发，服务返回向量顺序按 index 还原；缺项、零向量、非有限值、维数不一致会失败。不再设置本地 embedding 输入 token 上限，也不截断发送的文本；输入限制由 API 服务端处理。
 
 - 向量搜索：query embedding 与候选 chunk 向量的余弦相似度，精确搜索。
 - 关键词搜索：jieba 中文分词、英文大小写归一化、BM25Okapi。小语料中某些 BM25 分数可为零或负数，仍保留实际包含查询词的 chunk，不因分数符号错误丢弃。
@@ -162,6 +164,7 @@ doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社�
 | embedding.base_url | https://api.openai.com/v1 | embedding 服务根地址，可独立于生成服务 |
 | embedding.model | replace-with-your-embedding-model | 必须由用户选定 |
 | embedding.dimensions | null | null 使用模型原生维数；仅支持该参数的服务才能设置 |
+| embedding.api_format | multimodal | openai 为字符串批量输入；multimodal 在当前代理 /embeddings 路由逐条发送文本对象并接收单向量，避免多条文本被融合成一个向量 |
 | embedding.batch_size | 32 | 每次请求的文本条数 |
 | embedding.concurrency | 4 | 并行 embedding 请求数 |
 
@@ -176,7 +179,13 @@ doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社�
 | overview.concurrency | 6 | 同时处理的文档数，涵盖读取、overview、embedding |
 | overview.fragment_tokens | 6000 | 长文档原文分片 token 上限 |
 | overview.title_max_chars | 160 | 文档标题最大字符数 |
-| overview.summary_max_chars | 800 | 文档摘要最大字符数 |
+| overview.summary_max_chars | 800 | 文档摘要 prompt/schema 字符上限 |
+| overview.summary_validation_max_chars | 1000 | 仅文档摘要本地校验上限 |
+| text.pdf.strategy | auto | 本地 pdfplumber；也可显式设为 pdfplumber |
+| text.pdf.max_heading_level | 4 | Markdown 标题最大层级 |
+| text.pdf.heading_min_size_ratio | 1.1 | 候选标题字号相对页面主要正文字号的下限 |
+| text.pdf.heading_max_chars | 160 | 字号推断标题最大字符数 |
+| text.pdf.extract_tables / table_settings | true / {} | 提取 Markdown 表格及 pdfplumber 表格设置 |
 | overview.keyword_count | 12 | 关键词数量上限，至少一个 |
 | overview.keyword_max_chars | 80 | 每个关键词最大字符数 |
 | overview.stage_max_chars | 2400 | 累计阶段综合信息字符上限 |
@@ -233,6 +242,7 @@ doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社�
 | src/community_wiki/config.py | 外部配置加载、路径解析、类型/范围校验 |
 | src/community_wiki/models.py | Document、Overview、Chunk、Edge、Community、SearchHit、QuestionState |
 | src/community_wiki/text.py | Unicode token 切片、TXT/Markdown/PDF 读取、检索分词 |
+| src/community_wiki/pdf.py | 本地 PDF 逐页解析、书签/字号标题、Markdown 表格、Unicode 修复 |
 | src/community_wiki/llm.py | 生成/embedding HTTP 适配、并发、重试、响应校验 |
 | src/community_wiki/overviews.py | 文档逐片累计综合、社区全成员描述、输出长度校验 |
 | src/community_wiki/ingest.py | 批量入库、缓存判定、文档级事务保存 |

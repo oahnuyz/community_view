@@ -161,13 +161,22 @@ class ModelClient:
         if not texts:
             return []
         c = self.config.embedding
+        multimodal = c.api_format == "multimodal"
+        batch_size = 1 if multimodal else c.batch_size
 
         async def batch(items):
             body = {"model": c.model, "input": items, "encoding_format": "float"}
+            if multimodal:
+                # Multimodal inputs describe one sample, not independent batch items.
+                body["input"] = [{"type": "text", "text": items[0]}]
             if c.dimensions is not None:
                 body["dimensions"] = c.dimensions
             result = await self._post(c.base_url, "embeddings", body, self.embed_slots, "embedding")
-            data = sorted(result["data"], key=lambda v: v["index"])
+            data = (
+                [{"index": 0, "embedding": result["data"]["embedding"]}]
+                if multimodal
+                else sorted(result["data"], key=lambda v: v["index"])
+            )
             if [v["index"] for v in data] != list(range(len(items))):
                 raise ValueError("Embedding response has missing/duplicate indexes")
             vectors = []
@@ -184,8 +193,8 @@ class ModelClient:
         # Drain every batch before returning even when one fails: no unaccounted background calls.
         async with asyncio.TaskGroup() as group:
             tasks = [
-                group.create_task(batch(texts[i : i + c.batch_size]))
-                for i in range(0, len(texts), c.batch_size)
+                group.create_task(batch(texts[i : i + batch_size]))
+                for i in range(0, len(texts), batch_size)
             ]
         vectors = [vector for task in tasks for vector in task.result()]
         if len({len(v) for v in vectors}) != 1:

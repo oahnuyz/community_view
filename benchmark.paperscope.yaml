@@ -1,0 +1,9 @@
+# 三类 QA 共用一次文档入库和社区生成；逐题上下文独立。
+dataset_dir: data/benchmarks/paperscope_summary_93_all # 合并 QA，共用 93 篇 PDF。
+output_dir: data/runs/paperscope_93_naive_community # 两种模式的回答、gold、评分和 trace。
+database: data/runs/paperscope_93_naive_community/index.sqlite3 # 共用文档/向量/社区索引。
+log_file: data/runs/paperscope_93_naive_community/run.log # 实验日志。
+start: 0 # 从第一题开始。
+count: null # gap 119 + results_comparison 116 + trend 117，共 352 题。
+modes: [naive, community] # 两种模式共享一次入库，各自问答和评分。
+concurrency: 5 # 问答/评分阶段的合计并发数；每题上下文独立。

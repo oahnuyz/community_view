@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .models import Chunk, Document
 from .overviews import document_overview
+from .pdf import PARSER_VERSION
 from .store import dumps
 from .text import read_document
 
@@ -20,7 +21,16 @@ def digest(value: str) -> str:
 
 def embedding_signature(config):
     c = config.embedding
-    return digest(dumps({"base_url": c.base_url, "model": c.model, "dimensions": c.dimensions}))
+    return digest(
+        dumps(
+            {
+                "base_url": c.base_url,
+                "model": c.model,
+                "dimensions": c.dimensions,
+                "api_format": c.api_format,
+            }
+        )
+    )
 
 
 def ingestion_signature(config):
@@ -31,6 +41,7 @@ def ingestion_signature(config):
                     exclude={"concurrency", "validation_retries"}
                 ),
                 "text": config.text.model_dump(exclude={"extensions"}),
+                "pdf_parser_version": PARSER_VERSION,
                 "model": config.model.model_dump(
                     exclude={
                         "timeout_seconds",
@@ -92,7 +103,7 @@ async def ingest(paths, config, store, client, text):
                 ):
                     result.unchanged += 1
                     return
-                content = await asyncio.to_thread(read_document, path)
+                content = await asyncio.to_thread(read_document, path, config.text.pdf)
                 overview = await document_overview(content, config, text, client)
                 pieces = text.split(
                     content, config.text.chunk_tokens, config.text.chunk_overlap_tokens

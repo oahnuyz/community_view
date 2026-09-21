@@ -71,3 +71,44 @@ async def test_empty_file_explicit_error(config, store, client, text, tmp_path):
     result = await ingest([path], config, store, client, text)
     assert "No extractable text" in result.errors[str(path)]
     assert not store.documents()
+
+
+async def test_prompts_render_configured_length_limits(config, text, client):
+    from community_wiki.overviews import describe_community
+
+    config.overview.summary_max_chars = 321
+    config.community.overview_max_chars = 234
+    prompts = []
+    original = client.json_completion
+
+    async def capture(system, *args, **kwargs):
+        prompts.append(system)
+        return await original(system, *args, **kwargs)
+
+    client.json_completion = capture
+    await document_overview("alpha text", config, text, client)
+    await describe_community([], config, client)
+    assert "summary: at most 321 characters" in prompts[0]
+    assert "overview: at most 234 characters" in prompts[1]
+    assert all("${" not in prompt for prompt in prompts)
+    assert all("spaces and punctuation" in prompt for prompt in prompts)
+
+
+@pytest.mark.parametrize("length,accepted", [(800, True), (801, True), (1000, True), (1001, False)])
+async def test_summary_schema_and_local_limit_are_independent(config, text, length, accepted):
+    class Client:
+        async def json_completion(self, system, payload, schema, retries, validate, purpose):
+            assert schema["properties"]["summary"]["maxLength"] == 800
+            assert payload["output_schema"] == schema
+            assert "summary: at most 800 characters" in system
+            assert "1000" not in system
+            value = {"title": "Title", "keywords": ["keyword"], "summary": "a" * length}
+            validate(value)
+            return value
+
+    if accepted:
+        result = await document_overview("source", config, text, Client())
+        assert len(result.summary) == length
+    else:
+        with pytest.raises(ValueError, match="1001 characters; at most 1000"):
+            await document_overview("source", config, text, Client())

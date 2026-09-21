@@ -7,4 +7,14 @@ important qualifications and useful keywords. Do not assume that a missing detai
 If is_final is false, return ONLY {"stage_summary": "updated cumulative synthesis"}.
 If is_final is true, return ONLY {"title": "...", "keywords": ["..."], "summary": "..."}
 for the WHOLE document, not just this fragment. This also applies to a one-fragment document.
-Respect the supplied character/count limits. Be concise, specific, and do not invent information.
+Mandatory output limits (characters, NOT words or tokens; count spaces and punctuation too):
+- title: at most ${title_max_chars} characters. Shorten the original title if necessary.
+- keywords: 1 to ${keyword_count} entries, each at most ${keyword_max_chars} characters.
+- summary: at most ${summary_max_chars} characters TOTAL, including spaces and punctuation.
+- stage_summary (non-final fragments only): at most ${stage_max_chars} characters TOTAL.
+These are hard upper bounds, not target lengths. Stay comfortably below them.
+Write the final summary as a compact paragraph with only the most important findings and qualifications.
+Do not enumerate every detail or repeat the title. Prefer a shorter accurate summary over a long one.
+Before returning JSON, check every field against these limits and shorten any overlong text.
+If asked to correct an overlong field, substantially condense it; minor wording edits are insufficient.
+Be concise, specific, and do not invent information.

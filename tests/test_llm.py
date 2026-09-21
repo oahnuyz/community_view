@@ -159,3 +159,48 @@ async def test_chat_and_structured_output_use_server_token_defaults(config, stor
             assert "max_output_tokens" not in request
     finally:
         await client.close()
+
+
+async def test_multimodal_independent_texts_order_concurrency_and_usage(config, store):
+    import asyncio
+
+    config.embedding.api_format = "multimodal"
+    config.embedding.dimensions = 2
+    config.embedding.concurrency = 2
+    active, peak = 0, 0
+    second_done = asyncio.Event()
+
+    async def respond(request):
+        nonlocal active, peak
+        body = json.loads(request.content)
+        assert request.url.path == "/v1/embeddings"
+        assert body["dimensions"] == 2
+        assert len(body["input"]) == 1 and body["input"][0]["type"] == "text"
+        value = int(body["input"][0]["text"])
+        active += 1
+        peak = max(peak, active)
+        try:
+            if value == 1:
+                await asyncio.wait_for(second_done.wait(), 2)
+            if value == 2:
+                second_done.set()
+            return httpx.Response(
+                200,
+                json={
+                    "data": {"embedding": [value, 1], "object": "embedding"},
+                    "usage": {"prompt_tokens": 5, "total_tokens": 5},
+                },
+            )
+        finally:
+            active -= 1
+
+    client = ModelClient(config, store, None, httpx.MockTransport(respond))
+    try:
+        with measure("multimodal") as totals:
+            vectors = await client.embed(["1", "2", "3"])
+        assert peak == 2 and totals.embedding_tokens == 15
+        assert len(vectors) == 3
+        for i, vector in enumerate(vectors, 1):
+            assert np.allclose(vector, np.array([i, 1]) / np.linalg.norm([i, 1]))
+    finally:
+        await client.close()

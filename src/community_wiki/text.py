@@ -6,7 +6,9 @@ from pathlib import Path
 
 import jieba
 import tiktoken
-from pypdf import PdfReader
+
+from .config import PDFConfig
+from .pdf import PDFParser
 
 
 class TextProcessor:
@@ -50,9 +52,9 @@ class TextProcessor:
         return result
 
 
-def read_document(path: Path) -> str:
+def read_document(path: Path, pdf_config: PDFConfig | None = None) -> str:
     if path.suffix.lower() == ".pdf":
-        text = "\n\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
+        text = PDFParser(pdf_config or PDFConfig()).parse(path)
     else:
         text = path.read_text(encoding="utf-8-sig")
     if not text.strip():

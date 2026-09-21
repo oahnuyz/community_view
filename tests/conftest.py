@@ -22,6 +22,7 @@ def config(tmp_path):
     config.storage.database = tmp_path / "index.sqlite3"
     config.storage.log_file = tmp_path / "test.log"
     config.embedding.dimensions = None
+    config.embedding.api_format = "openai"
     config.graph.min_weight = 0.0
     config.community.max_documents = 2
     return config

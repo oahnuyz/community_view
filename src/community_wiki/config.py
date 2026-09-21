@@ -49,9 +49,19 @@ class ModelConfig(Section):
 class EmbeddingConfig(Section):
     base_url: str
     model: str
+    api_format: Literal["openai", "multimodal"] = "openai"
     dimensions: int | None = Field(gt=0)
     batch_size: int = Field(gt=0)
     concurrency: int = Field(gt=0)
+
+
+class PDFConfig(Section):
+    strategy: Literal["auto", "pdfplumber"] = "auto"
+    max_heading_level: int = Field(default=4, ge=1, le=4)
+    heading_min_size_ratio: float = Field(default=1.1, gt=1)
+    heading_max_chars: int = Field(default=160, gt=0)
+    extract_tables: bool = True
+    table_settings: dict[str, Any] = Field(default_factory=dict)
 
 
 class TextConfig(Section):
@@ -59,6 +69,7 @@ class TextConfig(Section):
     extensions: list[str]
     chunk_tokens: int = Field(gt=0)
     chunk_overlap_tokens: int = Field(ge=0)
+    pdf: PDFConfig = Field(default_factory=PDFConfig)
 
     @model_validator(mode="after")
     def overlap(self):
@@ -72,6 +83,7 @@ class OverviewConfig(Section):
     fragment_tokens: int = Field(gt=0)
     title_max_chars: int = Field(gt=0)
     summary_max_chars: int = Field(gt=0)
+    summary_validation_max_chars: int = Field(default=1000, gt=0)
     keyword_count: int = Field(gt=0)
     keyword_max_chars: int = Field(gt=0)
     stage_max_chars: int = Field(gt=0)

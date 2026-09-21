@@ -13,10 +13,10 @@ storage:
 # 生成模型：文档 overview、社区描述、Agent 和评分共用此服务。
 # 请求不传 max_tokens / max_completion_tokens，输入窗口与输出 token 上限采用 API 服务端默认值。
 model:
-  base_url: http://127.0.0.1:18080/v1 # OpenAI-compatible 服务根地址；程序追加 /chat/completions。
+  base_url: http://127.0.0.1:8080/v1 # OpenAI-compatible 服务根地址；程序追加 /chat/completions。
   chat_model: deepseek-v4-flash # 服务中的模型名称；需支持原生工具调用和结构化 JSON 输出。
   timeout_seconds: 300 # HTTP 请求超时秒数；生成和 embedding 请求共用。
-  concurrency: 8 # 所有生成请求共享的最大并发数；文档与社区还有各自并发限制。
+  concurrency: 5 # 所有生成请求共享的最大并发数；文档与社区还有各自并发限制。
   retries: 2 # API 请求失败后的额外重试次数，范围 0~2；HTTP 错误和传输错误均适用，逐次记日志。
   retry_delay_seconds: 1 # 重试等待的起始秒数，后续按 2 倍递增。
   temperature: 0.0 # 生成温度，越低通常越稳定；应设置为实际模型支持的值。
@@ -26,11 +26,12 @@ model:
 # 向量模型：为文档 overview、原文 chunks、搜索 query 生成归一化向量。
 # 不在本地检查 embedding 输入 token 上限，由 API 服务端处理。
 embedding:
-  base_url: http://127.0.0.1:18080/v1 # embedding 服务根地址；程序追加 /embeddings，可与生成服务不同。
+  api_format: multimodal # openai：字符串批量输入；multimodal：逐条文本对象输入、单向量返回（当前代理的豆包视觉向量接口）。
+  base_url: http://127.0.0.1:8080/v1 # embedding 服务根地址；程序追加 /embeddings，可与生成服务不同。
   model: doubao-embedding-vision # embedding 模型名称；更换模型/地址/维数后需用新数据库重建。
   dimensions: 1024 # null 使用模型原生维数；仅在服务支持 dimensions 参数时填写正整数。
-  batch_size: 32 # 单次 embedding 请求包含的文本条数，不是 token 数。
-  concurrency: 4 # 并发 embedding HTTP 请求数，与生成模型的并发限制独立。
+  batch_size: 32 # openai 格式单次请求的文本条数；multimodal 每条文本独立请求，不使用该值。
+  concurrency: 5 # 并发 embedding HTTP 请求数，与生成模型的并发限制独立。
 
 # 原文读取与切片。
 text:
@@ -38,13 +39,21 @@ text:
   extensions: [.txt, .md, .markdown, .pdf] # 接受的文件扩展名；目录递归扫描，PDF 需有可提取文字层。
   chunk_tokens: 600 # 每个原文 chunk 的 token 上限；不额外存页码或章节信息。
   chunk_overlap_tokens: 80 # 相邻 chunk 的目标重叠量，必须小于 chunk_tokens；Unicode 边界可能略缩短。
+  pdf:
+    strategy: auto # auto 首先使用本地 pdfplumber；当前不自动调用 LLM/VLM 或 OCR，亦可显式填 pdfplumber。
+    max_heading_level: 4 # 书签和字体推断得到的 Markdown 标题最多四级。
+    heading_min_size_ratio: 1.1 # 无可用书签时，候选标题字号至少为该页主要正文字号的此倍数。
+    heading_max_chars: 160 # 字体推断标题的最大字符数，降低把正文误判成标题的概率。
+    extract_tables: true # 逐页提取表格并附为 Markdown；正文中的表格文字可能与此重复。
+    table_settings: {} # 传给 pdfplumber extract_tables 的参数；空对象使用库默认值。
 
 # 文档 overview：title、keywords、summary；长度均按 Unicode 字符数计算。
 overview:
-  concurrency: 6 # 同时处理的文档数；不同文档可并发，同一文档的长文分片顺序处理。
+  concurrency: 5 # 同时处理的文档数；不同文档可并发，同一文档的长文分片顺序处理。
   fragment_tokens: 10000 # 原文分片 token 上限；完整请求还包含累计信息、指令和 schema，需预留窗口。
   title_max_chars: 160 # 文档 title 最大字符数。
-  summary_max_chars: 800 # 全文摘要最大字符数；验证超限时要求模型修正，不直接截断。
+  summary_max_chars: 800 # prompt 和 API JSON schema 中要求的摘要字符上限。
+  summary_validation_max_chars: 1000 # 仅程序侧允许的摘要字符上限；不修改 prompt/schema，不直接截断。
   keyword_count: 12 # 关键词数量上限；至少 1 个，规范化后不可重复。
   keyword_max_chars: 80 # 每个关键词或关键词短语的最大字符数。
   stage_max_chars: 2400 # 非最后分片返回的累计综合信息上限；传给下一片继续综合。
@@ -60,11 +69,11 @@ graph:
 # 层次社区：所有社区都生成描述，当前检索只使用叶社区。
 community:
   max_documents: 10 # 覆盖文档数超过该值即尝试拆分；失败记日志并保留叶社区，不强制满足阈值。
-  cluster_workers: 2 # 不同分支的 Leiden 聚类进程数；可与社区描述生成同时进行。
+  cluster_workers: 5 # 不同分支的 Leiden 聚类进程数；可与社区描述生成同时进行。
   resolution: 1.0 # Leiden RB modularity 分辨率；更高通常倾向更小社区，但不保证指定大小。
   seed: 42 # Leiden 随机种子；相同数据和库版本下便于复现。
   iterations: -1 # -1 表示迭代至收敛，也可填写正整数；不允许 0。
-  description_concurrency: 4 # 同时生成社区 name/overview 的任务数，还受 model.concurrency 限制。
+  description_concurrency: 5 # 同时生成社区 name/overview 的任务数，还受 model.concurrency 限制。
   name_max_chars: 100 # 社区名称最大字符数。
   overview_max_chars: 500 # 社区 overview 最大字符数；只基于全部成员文档 overview，不是综合报告。
   validation_retries: 2 # 社区描述 JSON、字段或长度校验失败后的额外修正次数。
@@ -85,7 +94,7 @@ retrieval:
 
 # 两种检索模式共用 Agent；去重集合覆盖一次用户问题的全部轮次，新问题重置。
 agent:
-  tool_concurrency: 4 # 单个问题同一轮最多并发执行的工具数；1 为串行，embedding 请求仍受 embedding.concurrency 限制。
+  tool_concurrency: 5 # 单个问题同一轮最多并发执行的工具数；1 为串行，embedding 请求仍受 embedding.concurrency 限制。
   max_rounds: 15 # 单个问题最多模型调用轮数；最后一轮禁止工具调用，只生成最终回答。
   max_identical_tool_calls: 2 # 同一次问题中，相同工具和参数最多执行次数；超过后返回工具错误。
 

@@ -1,5 +1,7 @@
 """Validated, bounded document and community synthesis."""
 
+from string import Template
+
 from .models import Overview
 
 
@@ -16,15 +18,18 @@ def object_schema(properties):
     }
 
 
-def validate_object(value, schema):
+def validate_object(value, schema, *, length_overrides=None):
     if not isinstance(value, dict) or set(value) != set(schema["properties"]):
         raise ValueError(f"Expected exactly fields {list(schema['properties'])}")
     for key, rule in schema["properties"].items():
         item = value[key]
         if rule["type"] == "string":
-            if not isinstance(item, str) or not item.strip() or len(item) > rule["maxLength"]:
+            maximum = (length_overrides or {}).get(key, rule["maxLength"])
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(f"{key}: nonblank text required")
+            if len(item) > maximum:
                 raise ValueError(
-                    f"{key}: nonblank text of at most {rule['maxLength']} characters required"
+                    f"{key}: {len(item)} characters; at most {maximum} characters required"
                 )
         else:
             if not isinstance(item, list) or not rule["minItems"] <= len(item) <= rule["maxItems"]:
@@ -39,7 +44,9 @@ async def document_overview(content, config, text, client):
     c = config.overview
     fragments = text.split(content, c.fragment_tokens)
     previous = None
-    prompt = config.prompts.document.read_text(encoding="utf-8")
+    prompt = Template(config.prompts.document.read_text(encoding="utf-8")).substitute(
+        c.model_dump()
+    )
     for index, fragment in enumerate(fragments, 1):
         final = index == len(fragments)
         schema = object_schema(
@@ -69,7 +76,9 @@ async def document_overview(content, config, text, client):
             payload,
             schema,
             c.validation_retries,
-            lambda v: validate_object(v, schema),
+            lambda v: validate_object(
+                v, schema, length_overrides={"summary": c.summary_validation_max_chars}
+            ),
             "document_overview",
         )
         previous = result.get("stage_summary")
@@ -87,7 +96,7 @@ async def describe_community(documents, config, client):
     }
     # Explicitly all covered document overviews, including for parent communities.
     return await client.json_completion(
-        config.prompts.community.read_text(encoding="utf-8"),
+        Template(config.prompts.community.read_text(encoding="utf-8")).substitute(c.model_dump()),
         payload,
         schema,
         c.validation_retries,

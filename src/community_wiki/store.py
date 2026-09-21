@@ -1,6 +1,7 @@
 """SQLite persistence. Documents and complete graph snapshots publish atomically."""
 
 import json
+import re
 import sqlite3
 from dataclasses import asdict
 from pathlib import Path
@@ -26,6 +27,8 @@ class Store:
         CREATE TABLE IF NOT EXISTS documents(
             doc_id TEXT PRIMARY KEY, source TEXT UNIQUE NOT NULL, content_hash TEXT NOT NULL,
             signature TEXT NOT NULL, overview TEXT NOT NULL, vector BLOB NOT NULL);
+        CREATE TABLE IF NOT EXISTS document_ids(
+            source TEXT PRIMARY KEY, doc_id TEXT UNIQUE NOT NULL);
         CREATE TABLE IF NOT EXISTS chunks(
             doc_id TEXT REFERENCES documents(doc_id) ON DELETE CASCADE,
             ordinal INTEGER, text TEXT NOT NULL, vector BLOB NOT NULL,
@@ -81,6 +84,29 @@ class Store:
             Community(**json.loads(row[0]))
             for row in self.db.execute("SELECT body FROM communities ORDER BY community_id")
         ]
+
+    def allocate_document_ids(self, sources: list[str]) -> dict[str, str]:
+        """Reserve stable, database-local IDs before starting concurrent ingestion."""
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            self.db.executemany(
+                "INSERT OR IGNORE INTO document_ids VALUES (?,?)",
+                self.db.execute("SELECT source,doc_id FROM documents").fetchall(),
+            )
+            mapping = dict(self.db.execute("SELECT source,doc_id FROM document_ids"))
+            sequence = max(
+                [int(self.meta("document_id_sequence") or 0)]
+                + [int(value[1:]) for value in mapping.values() if re.fullmatch(r"D[0-9]+", value)]
+            )
+            for source in sorted(set(sources)):
+                if source not in mapping:
+                    sequence += 1
+                    mapping[source] = f"D{sequence:04d}"
+                    self.db.execute(
+                        "INSERT INTO document_ids VALUES (?,?)", (source, mapping[source])
+                    )
+            self._set_meta("document_id_sequence", sequence)
+        return {source: mapping[source] for source in sources}
 
     def save_document(self, doc: Document, chunks: list[Chunk], embedding_signature: str):
         with self.db:

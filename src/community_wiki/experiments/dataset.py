@@ -93,9 +93,9 @@ def prepare(settings, dataset):
 
 def verify_index(dataset, config, store, *, complete):
     expected = {
-        digest(str(path)): doc for doc, path in zip(dataset.documents, dataset.paths, strict=True)
+        str(path): doc for doc, path in zip(dataset.documents, dataset.paths, strict=True)
     }
-    actual = {doc.doc_id: doc for doc in store.documents()}
+    actual = {doc.source: doc for doc in store.documents()}
     if actual.keys() - expected.keys():
         raise ValueError("Benchmark database contains documents outside the prepared corpus")
     if complete and actual.keys() != expected.keys():

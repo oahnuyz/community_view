@@ -86,7 +86,8 @@ async def ingest(paths, config, store, client, text):
     embed_signature = embedding_signature(config)
     if store.meta("embedding_signature") not in (None, embed_signature):
         raise ValueError("Embedding configuration changed; use a new database and rebuild")
-    existing = {d.doc_id: d for d in store.documents()}
+    existing = {d.source: d for d in store.documents()}
+    identities = store.allocate_document_ids([str(path) for path in sorted(files)])
     slots = asyncio.Semaphore(config.overview.concurrency)
     result = IngestResult()
 
@@ -94,8 +95,8 @@ async def ingest(paths, config, store, client, text):
         async with slots:
             try:
                 content_hash = hashlib.sha256(await asyncio.to_thread(path.read_bytes)).hexdigest()
-                doc_id = digest(str(path))
-                previous = existing.get(doc_id)
+                doc_id = identities[str(path)]
+                previous = existing.get(str(path))
                 if (
                     previous
                     and previous.content_hash == content_hash

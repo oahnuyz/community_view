@@ -1,0 +1,9 @@
+# EnterpriseRAGBench：服务器准备好的 323 篇 TXT、80 条 QA；保留重复内容的不同物理文档。
+dataset_dir: data/benchmarks/enterprise_rag_bench_selected_80 # 从 prepared 原样复制，保留文件布局和校验信息。
+output_dir: data/runs/enterprise_rag_bench_80_naive_community # 独立结果目录，不覆盖 ScholarQA/PaperScope。
+database: data/runs/enterprise_rag_bench_80_naive_community/index.sqlite3 # 独立数据库，新文档编号 D0001–D0323。
+log_file: data/runs/enterprise_rag_bench_80_naive_community/run.log # 入库、问答、评分和重试日志。
+start: 0 # 从第一题开始。
+count: 80 # project_related 40 + conflicting_info 20 + completeness 20。
+modes: [naive, community] # 共享一次文档入库与社区构建，两种模式各运行 80 次问答及评分。
+concurrency: 5 # QA/评分阶段各自最多并发 5 条；模型请求等并发继续使用 config.yaml。

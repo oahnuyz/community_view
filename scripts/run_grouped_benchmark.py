@@ -15,6 +15,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--settings", required=True)
+    parser.add_argument(
+        "--stages", nargs="+", choices=["all", "cluster", "ask", "judge"], default=["all"]
+    )
     args = parser.parse_args()
     settings = BenchmarkConfig.load(args.settings)
     output = settings.output_dir
@@ -27,23 +30,43 @@ def main():
     write_json(output / "run_status.json", status)
     code = 1
     try:
-        code = subprocess.call(
-            [
-                sys.executable,
-                "-m",
-                "community_wiki.cli",
-                "--config",
-                args.config,
-                "benchmark",
-                "--settings",
-                args.settings,
-                "--stage",
-                "all",
-            ]
-        )
+        codes = []
+        for stage in args.stages:
+            status["stage"] = stage
+            write_json(output / "run_status.json", status)
+            codes.append(
+                subprocess.call(
+                    [
+                        sys.executable,
+                        "-m",
+                        "community_wiki.cli",
+                        "--config",
+                        args.config,
+                        "benchmark",
+                        "--settings",
+                        args.settings,
+                        "--stage",
+                        stage,
+                    ]
+                )
+            )
+            if stage == "cluster" and codes[-1]:
+                break
+        code = int(any(codes))
+        status["stage_exit_codes"] = dict(zip(args.stages[: len(codes)], codes, strict=True))
         if (output / "results.jsonl").exists():
             dataset = load_dataset(settings)
             latest = load_results(settings)
+            if "all" in args.stages or "judge" in args.stages:
+                incomplete = sum(
+                    latest.get((mode, q["id"]), {}).get("status") != "complete"
+                    or latest.get((mode, q["id"]), {}).get("evaluation", {}).get("status")
+                    != "complete"
+                    for mode in settings.modes
+                    for q in dataset.questions
+                )
+                status["incomplete_qa_or_judge"] = incomplete
+                code = int(bool(code or incomplete))
             categories = list(
                 dict.fromkeys(q.get("category", "uncategorized") for q in dataset.questions)
             )

@@ -5,10 +5,11 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict
+from typing import get_args
 
 from .agent import Agent
 from .communities import cluster
-from .config import Config
+from .config import Config, RetrievalMode
 from .experiments import BenchmarkConfig, run_benchmark
 from .ingest import ingest
 from .llm import ModelClient
@@ -25,7 +26,7 @@ def parser():
     benchmark = commands.add_parser(
         "benchmark", help="Run a prepared QA dataset with resume support"
     )
-    benchmark.add_argument("--settings", default="benchmark.yaml")
+    benchmark.add_argument("--settings", required=True, help="Dataset experiment configuration")
     benchmark.add_argument(
         "--stage",
         choices=["prepare", "ingest", "cluster", "index", "ask", "run", "judge", "all"],
@@ -39,7 +40,7 @@ def parser():
     for name in ("ask", "search"):
         child = commands.add_parser(name)
         child.add_argument("query")
-        child.add_argument("--mode", choices=["naive", "community"])
+        child.add_argument("--mode", choices=get_args(RetrievalMode))
         child.add_argument(
             "--doc-ids",
             nargs="+",

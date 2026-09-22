@@ -38,6 +38,8 @@ class Store:
             PRIMARY KEY(source,target));
         CREATE TABLE IF NOT EXISTS communities(community_id TEXT PRIMARY KEY, body TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS community_links(source TEXT, target TEXT, body TEXT, PRIMARY KEY(source,target));
+        CREATE TABLE IF NOT EXISTS community_ids(
+            fingerprint TEXT PRIMARY KEY, community_id TEXT UNIQUE NOT NULL);
         CREATE TABLE IF NOT EXISTS runs(
             run_id TEXT PRIMARY KEY, created TEXT DEFAULT CURRENT_TIMESTAMP,
             mode TEXT, status TEXT, messages TEXT);
@@ -143,6 +145,22 @@ class Store:
             self._set_meta("embedding_signature", embedding_signature)
             self._set_meta("embedding_dimensions", len(doc.vector))
             self._set_meta("revision", self.revision + 1)
+
+    def allocate_community_ids(self, fingerprints):
+        """Keep structural fingerprints internally and expose stable database-local short IDs."""
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            mapping = dict(self.db.execute("SELECT fingerprint,community_id FROM community_ids"))
+            sequence = max([int(value[1:]) for value in mapping.values()] + [0])
+            for fingerprint in fingerprints:
+                if fingerprint not in mapping:
+                    sequence += 1
+                    mapping[fingerprint] = f"C{sequence:04d}"
+                    self.db.execute(
+                        "INSERT INTO community_ids VALUES (?,?)",
+                        (fingerprint, mapping[fingerprint]),
+                    )
+        return {key: mapping[key] for key in fingerprints}
 
     def publish_graph(
         self,

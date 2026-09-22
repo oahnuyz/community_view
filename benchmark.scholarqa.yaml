@@ -1,0 +1,9 @@
+# 使用 config.yaml 中统一的文档与社区提示词；新实验结果与历史结果隔离。
+dataset_dir: data/benchmarks/scholarqa_multi_valid_101 # prepared 原文和 QA 文件。
+output_dir: data/runs/unified_prompts/scholarqa # 独立新结果目录，保留旧轮。
+database: data/runs/unified_prompts/scholarqa/index.sqlite3 # 独立新索引，避免覆盖历史数据。
+log_file: data/runs/unified_prompts/scholarqa/run.log # 当前实验日志。
+start: 0 # 从第一题开始。
+count: 92 # 与既有实验的题目集合一致。
+modes: [naive, community] # 共用一次本数据集的索引。
+concurrency: 5 # 问答/评测并发；模型及入库并发由 config.yaml 控制。

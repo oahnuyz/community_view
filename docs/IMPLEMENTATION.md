@@ -36,7 +36,7 @@ flowchart TD
 - 新文档 ID 由数据库分配为 `D0001`、`D0002`……，超过四位自然扩展为 `D10000`。每批按规范绝对路径排序，在并发处理前事务性预留编号，分配顺序不依赖模型完成先后。`document_ids` 保存路径与编号，`meta.document_id_sequence` 保存序号；重启、重试、同路径内容更新都复用编号，失败预留或删除可留下空号，不回收编号。不同数据库独立编号，不是跨库全局 ID。
 - 现有数据库中的旧 ID 保留，避免破坏社区、chunk 和历史 trace。仍使用规范绝对路径识别同一来源；不同路径即使内容相同也视为不同文档。文件删除或移动不会自动删除已有数据。
 - 文档和社区 prompt 使用 `${配置字段名}` 插入当前字符数/关键词数上限，明确字符数包含空格和标点，不是词数或 token 数；要求留出余量并在输出前检查长度。
-- 每篇输出 `title`、`keywords`、`summary`。文档摘要 prompt/schema 上限仍为 800 字符，本地独立按 `summary_validation_max_chars=1200` 校验；标题、关键词、阶段综合与社区 overview 限制不变。关键词不能为空且不允许规范化后重复。超长错误包含实际长度和上限；超过重试次数则该文档失败，不对模型结果静默截断。
+- 每篇输出 `title`、`keywords`、`summary`。文档摘要写作目标 300–350 字符，schema 上限 350，本地按 `summary_validation_max_chars=450` 校验；社区 overview 写作目标 150–200 字符，schema 上限 200，本地按 `overview_validation_max_chars=250` 校验。目标下界不强制填满，计数包含空格和标点。标题、关键词及阶段综合限制不变。关键词不能为空且不允许规范化后重复。超长错误包含实际长度和上限；超过重试次数则该文档失败，不对模型结果静默截断。
 - 文档按 `fragment_tokens` 拆分；同篇按顺序向模型传入 `fragment_index`、`fragment_count`、`is_final`、`previous_synthesis`、`content`。非最后片返回 `stage_summary`，下一片收到该累计信息；最后片只返回全文 overview。单片文档直接执行最后片分支。
 - `fragment_tokens` 约束原文分片内容，**不是完整 HTTP 请求的 token 总预算**。模型输入还包括前片综合、指令和 schema；需要给模型窗口留余量。长度约束使用 Python Unicode 字符数，不是 token 数。
 - 分片不漏掉后文，且避免在 UTF-8 字符中间切开。阶段摘要本身仍是有损概括，因此“全篇均被处理”不等于“每个细节均保留”；检索仍有原文 chunks 可用。
@@ -52,7 +52,7 @@ flowchart TD
 - 向量搜索：query embedding 与候选 chunk 向量的余弦相似度，精确搜索。
 - 关键词搜索：jieba 中文分词、英文大小写归一化、BM25Okapi。小语料中某些 BM25 分数可为零或负数，仍保留实际包含查询词的 chunk，不因分数符号错误丢弃。
 - 混合搜索：两路分别取候选，按 RRF 融合：`score = Σ 1/(rrf_constant + rank)`，rank 从 1 开始，再取 `chunk_k`。
-- doc_ids 在截取搜索排名前按精确 ID 限制候选集合；BM25 的 IDF 仍基于全库。null 表示不限制，空列表表示不搜索任何文档，未知 ID 返回错误。返回的文档 overview 同时包含 doc_id、title、keywords、summary，可供后续定向检索。
+- doc_ids 在截取搜索排名前按精确 ID 限制候选集合；BM25 的 IDF 仍基于全库。null 表示不限制，空列表表示不搜索任何文档，未知 ID 返回错误。返回给 QA 的文档 overview 包含 doc_id、title、summary，省略 keywords（入库数据和建图仍保留关键词），可供后续定向检索。
 
 图的 `graph.mode` 与搜索的 `retrieval.search_mode` 互相独立，例如可使用关键词建图与混合 chunk 搜索。
 
@@ -95,9 +95,9 @@ flowchart TD
 
 所有社区描述与聚类完成后，在单一事务中发布图、社区和社区联系。任何描述失败，不发布半套社区。若构建期间另一个进程更新了文档，版本检查阻止过期结果覆盖新数据。
 
-文档成功更新会使社区快照过期；community 模式拒绝使用过期社区，要求执行 `cluster`，naive 仍可使用新 chunks。重建目前处理全库，未做局部增量聚类。
+文档成功更新会使社区快照过期；community 和 community_guide 模式拒绝使用过期社区，要求执行 `cluster`，naive 仍可使用新 chunks。重建目前处理全库，未做局部增量聚类。
 
-## 6. 阶段五：两种检索模式的精确行为
+## 6. 阶段五：三种检索模式的精确行为
 
 ### naive
 
@@ -119,6 +119,12 @@ flowchart TD
 原始 chunk 命中的全部文档都会按需附上自己的 overview，即使未进入前 doc_k；只有社区扩展受 doc_k 控制。直接 `read_chunks` 也使用相同的固定扩展和去重流程。
 
 doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社区及其全部成员仍可扩展到该 ID 范围以外。命令行 `ask --doc-ids ID1 ID2` 设置问题级范围，搜索取该范围与工具 doc_ids 的交集，直接读取也必须在该范围内。当前不召回父社区，不生成社区报告，不设置社区分页或独立上下文 token 预算。
+
+### community_guide
+
+在第一次模型调用前固定以原始问题搜索一次，使用配置的 search_mode、chunk_k 和 doc_k；社区扩展与 community 一致。初始上下文只保留 communities、document_overviews 和去重说明，移除 chunks。仅此模式注入 `prompts/community_guide.txt`，说明这些内容是可能相关的初步导览，信息不明确时应继续用工具探索。
+
+后续 search_chunks/read_chunks 行为与 community 一致，可返回原文。首次搜索与后续工具共享整题去重状态，每道新问题重新开始；初始内容记录到 trace。自动搜索的耗时及 query embedding token 纳入该题指标，但不计作模型迭代轮次。无命中时提供空导览，搜索失败则记录该题失败。问题级 doc_ids 范围同样生效，社区扩展仍不受其限制。
 
 ## 7. 阶段六：Agent harness
 
@@ -180,8 +186,8 @@ doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社�
 | overview.concurrency | 6 | 同时处理的文档数，涵盖读取、overview、embedding |
 | overview.fragment_tokens | 6000 | 长文档原文分片 token 上限 |
 | overview.title_max_chars | 160 | 文档标题最大字符数 |
-| overview.summary_max_chars | 800 | 文档摘要 prompt/schema 字符上限 |
-| overview.summary_validation_max_chars | 1200 | 当前仅文档摘要本地校验上限 |
+| overview.summary_target_min_chars / summary_max_chars | 300 / 350 | 文档摘要写作目标区间，schema 上限 350 |
+| overview.summary_validation_max_chars | 450 | 文档摘要本地校验硬上限 |
 | text.pdf.strategy | auto | 本地 pdfplumber；也可显式设为 pdfplumber |
 | text.pdf.max_heading_level | 4 | Markdown 标题最大层级 |
 | text.pdf.heading_min_size_ratio | 1.1 | 候选标题字号相对页面主要正文字号的下限 |
@@ -200,21 +206,22 @@ doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社�
 | graph.neighbor_k | 15 | 每个通道候选邻居数，增大会提升连通性及边数 |
 | graph.min_weight | 0.25 | 通过候选规则后保留边的最低权重；零权重始终排除 |
 | graph.vector_weight | 0.7 | 混合建边 α，关键词权重为 1−α |
-| community.max_documents | 20 | 超过即尝试拆分的文档数量 |
+| community.max_documents | 6 | 超过即尝试拆分的文档数量 |
 | community.cluster_workers | 2 | 并发 CPU 聚类进程数 |
 | community.resolution | 1.0 | Leiden 分辨率；更高通常倾向更小社区 |
 | community.seed | 42 | 固定随机种子；跨库版本不保证完全相同结果 |
 | community.iterations | -1 | -1 运行至收敛，或指定正数迭代次数 |
 | community.description_concurrency | 4 | 并发社区描述数，还受 model.concurrency 限制 |
 | community.name_max_chars | 100 | 社区名最大字符数 |
-| community.overview_max_chars | 500 | 社区 overview 最大字符数 |
+| community.overview_target_min_chars / overview_max_chars | 150 / 200 | 社区 overview 写作目标区间，schema 上限 200 |
+| community.overview_validation_max_chars | 250 | 社区 overview 本地校验硬上限 |
 | community.validation_retries | 2 | 社区描述格式/长度错误修正次数 |
 
 ### retrieval / agent / prompts
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
-| retrieval.mode | community | naive/community，可被 CLI --mode 覆盖 |
+| retrieval.mode | naive | naive/community/community_guide，可被 CLI --mode 覆盖 |
 | retrieval.search_mode | hybrid | 默认 chunk 搜索方式，可被工具参数或 search --search-mode 覆盖 |
 | retrieval.chunk_k | 12 | 一次检索输出 chunk 数 |
 | retrieval.doc_k | 3 | 根据 chunk 排名选出的扩展文档数 |
@@ -230,6 +237,7 @@ doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社�
 | agent.max_identical_tool_calls | 2 | 每个问题相同工具+参数可执行次数 |
 | prompts.document | prompts/document.txt | 文档累计综合及最终 overview 指令 |
 | prompts.community | prompts/community.txt | 社区短描述指令 |
+| prompts.community_guide | prompts/community_guide.txt | 仅社区导览模式注入的初始上下文说明 |
 | prompts.agent | prompts/agent.txt | 问答与工具使用系统指令 |
 | prompts.question | prompts/question.txt | 用户指定的简短回答模板，用 {question} 插入问题 |
 | prompts.judge | prompts/judge.txt | 用户指定的 0–4 分 LLM 评分模板 |

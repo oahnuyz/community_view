@@ -1,6 +1,6 @@
 # community_wiki
 
-以文档为节点的社区 RAG 原型。当前实现 `naive`、`community` 两种模式；两种模式共用原生工具调用 agent loop。`wiki` 和社区综合报告暂不实现。
+以文档为节点的社区 RAG 原型。当前实现 `naive`、`community`、`community_guide` 三种模式，共用原生工具调用 agent loop。`wiki` 和社区综合报告暂不实现。
 
 ## 已实现的需求
 
@@ -13,9 +13,15 @@
 | 5. 层次社区 | 超过文档数量阈值就尝试递归拆分；独立分支可并发；保留层级、父子社区、全部覆盖文档 | igraph + Leiden RB modularity；进程池；拆分失败保留叶社区并记日志 |
 | 6. 社区描述和联系 | 每个社区并发生成简短 name、overview；父社区直接使用覆盖的全部文档 overview；保存同层社区联系及不同深度叶社区联系 | LLM 描述与下层拆分可同时执行；全量保留跨社区文档边，另存社区间 sum/max 汇总 |
 | 7. 检索扩展 | 按 chunk 排名选前 doc_k 个不同文档；自动扩展其叶社区与各自最大关联边连接的叶社区；doc_ids 仅限制 chunk 搜索 | 固定 pipeline；不提供社区工具；单次问题跨全部 agent 轮次去重 |
-| 8. Agent 问答 | 多轮搜索、换词、按文档 ID 限定搜索、读取相邻 chunk；naive/community 切换；每题独立上下文 | 少量严格类型工具、原生 tool_calls 循环、同轮工具并发、轮数及重复调用限制、SQLite 运行记录 |
+| 8. Agent 问答 | 多轮搜索、换词、按文档 ID 限定搜索、读取相邻 chunk；naive/community/community_guide 切换；每题独立上下文 | 少量严格类型工具、原生 tool_calls 循环、同轮工具并发、轮数及重复调用限制、SQLite 运行记录 |
 
 完整的规则、所有参数及代码模块说明见 [实现说明](docs/IMPLEMENTATION.md)。
+
+所有数据集统一使用 `prompts/document.txt` 和 `prompts/community.txt`。QA 上下文中的文档 overview 只展示 `doc_id`、`title`、完整 `summary`，省略关键词；关键词仍保留在入库数据中用于建图。同一问题中每篇文档只展示一次。
+
+`community_guide` 在首次模型调用前，用原始问题按配置的检索方式搜索一次，执行与 community 相同的社区扩展，但只注入社区和文档 overview，不注入命中的 chunks。该模式独有的提示词说明这些资料只是可能相关的初步导览，信息不明确时应继续调用工具。后续工具正常返回原文 chunks，去重记录覆盖首轮及后续全部轮次。固定搜索的耗时和 query embedding token 计入单题指标，不额外计作一次 Agent 轮次。可通过 `ask --mode community_guide`，或实验配置 `modes: [naive, community, community_guide]` 启用。
+
+新长度限制作用于后续生成，不自动修改已有入库数据；写作目标下界不强制填满，字符数包含空格和标点。
 
 ## 本地运行
 
@@ -58,15 +64,16 @@
 |---|---:|---|
 | `overview.concurrency` | 6 | 同时处理的文档数 |
 | `overview.fragment_tokens` | 6000 | 单个原文分片的 token 上限 |
-| `overview.summary_max_chars` | 800 | prompt 和 JSON schema 中的文档摘要字符上限 |
-| `overview.summary_validation_max_chars` | 1200 | 当前本地文档摘要校验上限；其他字段仍按原限制校验 |
+| `overview.summary_target_min_chars / summary_max_chars` | 300 / 350 | 文档摘要写作目标区间；schema 上限为 350 |
+| `overview.summary_validation_max_chars` | 450 | 本地文档摘要硬上限；超限带错误反馈重试，不截断 |
 | `text.chunk_tokens / chunk_overlap_tokens` | 600 / 80 | chunk 大小 / 目标重叠量 |
 | `graph.mode / neighbor_k` | hybrid / 15 | 建边方式 / 每个通道候选邻居数 |
 | `graph.vector_weight / min_weight` | 0.7 / 0.25 | 混合向量权重 / 保留边阈值 |
-| `community.max_documents` | 20 | 超过即尝试拆分，非强制上限 |
-| `community.cluster_workers / description_concurrency` | 2 / 4 | 聚类进程数 / 描述并发数 |
+| `community.max_documents` | 6 | 超过即尝试拆分，非强制上限 |
+| `community.cluster_workers / description_concurrency` | 5 / 5 | 聚类进程数 / 描述并发数 |
 | `agent.tool_concurrency` | 4 | 单个问题同一轮工具执行并发数；结果按调用顺序回填和去重，1 为串行 |
-| `community.overview_max_chars` | 500 | 社区 overview 字符上限 |
+| `community.overview_target_min_chars / overview_max_chars` | 150 / 200 | 社区 overview 写作目标区间；schema 上限为 200 |
+| `community.overview_validation_max_chars` | 250 | 本地社区 overview 硬上限；超限带错误反馈重试 |
 | `retrieval.chunk_k / doc_k` | 12 / 3 | chunk 召回数 / 用于扩展的不同文档数 |
 | `agent.max_rounds` | 8 | 单个问题模型调用轮数上限；末轮只生成答案 |
 
@@ -86,15 +93,15 @@
 
 ## 统一实验接口
 
-所有 `prepared/` 格式数据集使用同一个接口。实验配置见 [benchmark.yaml](benchmark.yaml)，包含数据集路径、输出路径、QA 选择、运行模式和 QA/评分共用的并发数。`count: null` 表示运行全部剩余 QA。当前配置指向 ScholarQA-Multi 清理后的 92 条 QA 与 413 篇语料。
+所有 `prepared/` 格式数据集使用同一个接口。实验配置见 [benchmark.scholarqa.yaml](benchmark.scholarqa.yaml)，包含数据集路径、输出路径、QA 选择、运行模式和 QA/评分共用的并发数。`count: null` 表示运行全部剩余 QA。当前配置指向 ScholarQA-Multi 清理后的 92 条 QA 与 413 篇语料。
 
 ```sh
 # 只检查数据与选择样本，不调用模型
-.venv/bin/community-wiki benchmark --settings benchmark.yaml --stage prepare
+.venv/bin/community-wiki benchmark --settings benchmark.scholarqa.yaml --stage prepare
 # 以下命令供后续实际实验使用，当前尚未执行
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage index
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage ask
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage judge
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage index
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage ask
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage judge
 ```
 
 `--stage all` 依次完成入库、问答和 LLM 评分。文档入库与社区生成也可分别用 `--stage ingest`、`--stage cluster` 执行；`index` 连续执行这两个入库阶段。`run` 是 `ask` 的兼容别名。其他数据集复制一份实验 YAML，修改路径即可；每个实验使用独立数据库和输出目录。

@@ -1,7 +1,10 @@
-# 独立后台队列：运行完一个实验的全部阶段后，再启动下一个。
-config: config.yaml # 两个实验共用模型、摘要限制、检索配置；路径相对此文件。
-output_dir: data/queues/enterprise_then_mdaqa # 队列状态和总日志；各实验仍写入各自结果目录。
-continue_on_error: true # 某个实验失败时保留其错误和结果，仍执行下一项，避免后续实验一直未启动。
+# 四个数据集独立重新入库；PaperScope 按三类汇总，共六组 naive/community 对照。
+config: config.yaml # 所有阶段使用当前模型配置和 max_documents=6。
+output_dir: data/queues/unified_prompts # 本批次独立队列状态、日志和退出码。
+continue_on_error: true # 当前数据集失败仍继续后续数据集。
+stages: [all] # 依次重新入库、构建社区、问答、评分。
 experiments:
-  - benchmark.enterprise.yaml # 复用已有 322 篇文档，补齐入库后继续问答与评分。
-  - benchmark.mdaqa.yaml # 接着新建 MDAQA 索引，完成 naive/community 全部问答与评分。
+  - benchmark.scholarqa.yaml # 413 文档，92 QA。
+  - benchmark.enterprise.yaml # 323 TXT，80 QA。
+  - benchmark.paperscope.yaml # 93 PDF，352 QA：gap 119、results_comparison 116、trend 117。
+  - benchmark.mdaqa.yaml # 143 PDF，100 QA。

@@ -96,7 +96,7 @@ async def test_doc_ids_scope_chunks_but_not_expansion(config, store, client, mod
         await retriever.search("alpha", QuestionState(), doc_ids=["a", "missing"], search_mode=mode)
 
 
-@pytest.mark.parametrize("mode", ["naive", "community"])
+@pytest.mark.parametrize("mode", ["naive", "community", "community_guide"])
 async def test_document_titles_always_include_ids(config, store, client, mode):
     populate(config, store)
     retriever = Retriever(config, store, client, mode)
@@ -235,3 +235,20 @@ def test_association_comes_from_selected_document_not_community(config, store, c
     store.publish_graph(edges, communities, store.revision, "test")
     retriever = Retriever(config, store, client, "community")
     assert retriever.selected_communities([SearchHit("a", 0, "alpha", 1)]) == ["AB", "C"]
+
+
+def test_neighbor_members_all_have_full_overviews_once(config, store, client):
+    populate(config, store)
+    config.retrieval.doc_k = 1
+    communities = [Community("AB", 0, None, ["a", "b"]), Community("CDE", 1, None, ["c", "d", "e"])]
+    store.publish_graph([Edge("a", "c", 0.9, 0.9, None)], communities, store.revision, "test")
+    retriever = Retriever(config, store, client, "community")
+    state = QuestionState()
+    first = retriever.context([SearchHit("a", 0, "alpha", 1)], state)
+    documents = {d["doc_id"]: d for d in first["document_overviews"]}
+    assert set(documents) == set("abcde")
+    assert all(set(d) == {"doc_id", "title", "summary"} for d in documents.values())
+    assert documents["d"]["summary"] == "Title D"
+    repeated = retriever.context([SearchHit("d", 0, "delta", 1)], state)
+    assert repeated["document_overviews"] == []
+    assert repeated["communities"] == []

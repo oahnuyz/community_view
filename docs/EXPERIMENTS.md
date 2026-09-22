@@ -6,7 +6,7 @@
 
 所有实验读取同一 prepared 格式：`qa.jsonl`、`documents.jsonl`、`dataset_info.json` 和文档 manifest 指向的 corpus 文件。问题按 JSONL 原顺序读取，不对 ID 排序。不把 gold answer、evidence 或标注的 document_ids 传给 Agent，不按每题参考文档限制检索范围。
 
-`benchmark.yaml` 参数（均有注释）：
+`benchmark.scholarqa.yaml` 参数（均有注释）：
 
 | 参数 | 用途 |
 |---|---|
@@ -16,22 +16,22 @@
 | log_file | 当前实验日志，含 API 重试及缺失 usage 警告 |
 | start | 从 0 开始的 QA 偏移 |
 | count | 选取题数；null 表示从 start 到末尾，超出实际题数报错 |
-| modes | naive、community 或两者；共用该实验索引 |
+| modes | naive、community、community_guide 的任意组合；共用该实验索引 |
 | concurrency | 问答/LLM 评分共用并发数；默认 2，阶段内所有模式合计受此限制 |
 
 模型和检索参数仍由主配置 `--config` 提供。两个密钥只放在 `api_keys.yaml`，由主配置的 `keys_file` 指定路径，不写入实验配置快照。`model.concurrency`、`embedding.concurrency` 分别控制模型请求并发，与 QA 并发是不同层面的限制。
 
 ```sh
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage prepare
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage index
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage ask
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage judge
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage prepare
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage index
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage ask
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage judge
 ```
 
 - prepare：验证样本、文档哈希、选择范围；只生成清单，不调用模型。
 - ingest：只执行文档 overview、原文切片和 embedding 保存，不生成社区。
 - cluster：只执行文档建图、社区拆分、社区 name/overview 生成；要求文档入库已完成，不重新生成文档 overview 或 embedding。
-- index：连续执行 ingest，并在包含 community 模式时执行 cluster。
+- index：连续执行 ingest，并在包含 community 或 community_guide 模式时执行 cluster。
 - ask：在已完成索引上执行 QA；索引缺失、内容或配置不一致时明确拒绝。run 是 ask 的兼容别名。
 - judge：只读取已保存的 QA 回答并评分，不打开索引、不要求 embedding 密钥、不重新问答。
 - all：依次 index → ask → judge。
@@ -124,16 +124,16 @@ summary 中按模式保存 `evaluation.accuracy = 有效评分之和 / 有效评
 单独执行各阶段：
 
 ```sh
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage ingest
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage cluster
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage ask
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage judge
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage ingest
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage cluster
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage ask
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage judge
 ```
 
 一次执行全部阶段：
 
 ```sh
-.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.yaml --stage all
+.venv/bin/community-wiki --config config.local.yaml benchmark --settings benchmark.scholarqa.yaml --stage all
 ```
 
 ## 模块

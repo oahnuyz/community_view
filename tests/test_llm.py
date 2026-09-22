@@ -6,7 +6,72 @@ import pytest
 
 from community_wiki.llm import ModelClient
 from community_wiki.metrics import measure
-from community_wiki.overviews import object_schema, string_schema, validate_object
+from community_wiki.overviews import (
+    describe_community,
+    document_overview,
+    object_schema,
+    string_schema,
+    validate_object,
+)
+
+
+@pytest.mark.parametrize("kind,target,limit", [("document", 350, 450), ("community", 200, 250)])
+@pytest.mark.parametrize("corrected", [True, False])
+async def test_overview_length_feedback_and_retry_limit(
+    config, store, text, caplog, kind, target, limit, corrected
+):
+    calls = []
+    field = "summary" if kind == "document" else "overview"
+
+    def respond(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        schema = body["response_format"]["json_schema"]["schema"]
+        assert schema["properties"][field]["maxLength"] == target
+        length = limit if corrected and len(calls) > 1 else limit + 1
+        value = (
+            {"title": "Title", "keywords": ["keyword"], "summary": "字" * length}
+            if kind == "document"
+            else {"name": "Community", "overview": "字" * length}
+        )
+        return httpx.Response(
+            200,
+            json={
+                "usage": {"total_tokens": 2},
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(value, ensure_ascii=False),
+                        },
+                    }
+                ],
+            },
+        )
+
+    client = ModelClient(config, store, text, httpx.MockTransport(respond))
+    try:
+        operation = (
+            document_overview("source", config, text, client)
+            if kind == "document"
+            else describe_community([], config, client)
+        )
+        if corrected:
+            value = await operation
+            assert len(value.summary if kind == "document" else value["overview"]) == limit
+            assert len(calls) == 2
+        else:
+            with pytest.raises(ValueError, match="output validation failed"):
+                await operation
+            assert len(calls) == 3  # First attempt plus two correction attempts.
+        error = f"{field}: {limit + 1} characters; at most {limit} characters required"
+        assert error in caplog.text
+        for attempt in calls[1:]:
+            assert attempt["messages"][-2]["role"] == "assistant"
+            assert error in attempt["messages"][-1]["content"]
+    finally:
+        await client.close()
 
 
 async def test_http_retries_embedding_order_normalization(config, store, text, caplog):

@@ -100,6 +100,8 @@ async def describe_community(documents, config, client):
         payload,
         schema,
         c.validation_retries,
-        lambda v: validate_object(v, schema),
+        lambda v: validate_object(
+            v, schema, length_overrides={"overview": c.overview_validation_max_chars}
+        ),
         "community_overview",
     )

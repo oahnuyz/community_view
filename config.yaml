@@ -13,7 +13,7 @@ storage:
 # 生成模型：文档 overview、社区描述、Agent 和评分共用此服务。
 # 请求不传 max_tokens / max_completion_tokens，输入窗口与输出 token 上限采用 API 服务端默认值。
 model:
-  base_url: http://127.0.0.1:8080/v1 # OpenAI-compatible 服务根地址；程序追加 /chat/completions。
+  base_url: http://127.0.0.1:18080/v1 # OpenAI-compatible 服务根地址；程序追加 /chat/completions。
   chat_model: deepseek-v4-flash # 服务中的模型名称；需支持原生工具调用和结构化 JSON 输出。
   timeout_seconds: 300 # HTTP 请求超时秒数；生成和 embedding 请求共用。
   concurrency: 5 # 所有生成请求共享的最大并发数；文档与社区还有各自并发限制。
@@ -27,7 +27,7 @@ model:
 # 不在本地检查 embedding 输入 token 上限，由 API 服务端处理。
 embedding:
   api_format: multimodal # openai：字符串批量输入；multimodal：逐条文本对象输入、单向量返回（当前代理的豆包视觉向量接口）。
-  base_url: http://127.0.0.1:8080/v1 # embedding 服务根地址；程序追加 /embeddings，可与生成服务不同。
+  base_url: http://127.0.0.1:18080/v1 # embedding 服务根地址；程序追加 /embeddings，可与生成服务不同。
   model: doubao-embedding-vision # embedding 模型名称；更换模型/地址/维数后需用新数据库重建。
   dimensions: 1024 # null 使用模型原生维数；仅在服务支持 dimensions 参数时填写正整数。
   batch_size: 32 # openai 格式单次请求的文本条数；multimodal 每条文本独立请求，不使用该值。
@@ -52,8 +52,9 @@ overview:
   concurrency: 5 # 同时处理的文档数；不同文档可并发，同一文档的长文分片顺序处理。
   fragment_tokens: 10000 # 原文分片 token 上限；完整请求还包含累计信息、指令和 schema，需预留窗口。
   title_max_chars: 160 # 文档 title 最大字符数。
-  summary_max_chars: 800 # prompt 和 API JSON schema 中要求的摘要字符上限。
-  summary_validation_max_chars: 1200 # 仅程序侧允许的摘要字符上限；不修改 prompt/schema，不直接截断。
+  summary_target_min_chars: 300 # 摘要建议长度下界；不作为必须填满的最小长度。
+  summary_max_chars: 350 # 写作目标上界，同时用于 prompt/API schema；目标区间 300–350 字符。
+  summary_validation_max_chars: 450 # 程序实际硬上限；超限带具体错误反馈重试，不截断。
   keyword_count: 12 # 关键词数量上限；至少 1 个，规范化后不可重复。
   keyword_max_chars: 80 # 每个关键词或关键词短语的最大字符数。
   stage_max_chars: 2400 # 非最后分片返回的累计综合信息上限；传给下一片继续综合。
@@ -68,19 +69,21 @@ graph:
 
 # 层次社区：所有社区都生成描述，当前检索只使用叶社区。
 community:
-  max_documents: 10 # 覆盖文档数超过该值即尝试拆分；失败记日志并保留叶社区，不强制满足阈值。
+  max_documents: 6 # 覆盖文档数超过该值即尝试拆分；失败记日志并保留叶社区，不强制满足阈值。
   cluster_workers: 5 # 不同分支的 Leiden 聚类进程数；可与社区描述生成同时进行。
   resolution: 1.0 # Leiden RB modularity 分辨率；更高通常倾向更小社区，但不保证指定大小。
   seed: 42 # Leiden 随机种子；相同数据和库版本下便于复现。
   iterations: -1 # -1 表示迭代至收敛，也可填写正整数；不允许 0。
   description_concurrency: 5 # 同时生成社区 name/overview 的任务数，还受 model.concurrency 限制。
   name_max_chars: 100 # 社区名称最大字符数。
-  overview_max_chars: 500 # 社区 overview 最大字符数；只基于全部成员文档 overview，不是综合报告。
+  overview_target_min_chars: 150 # 社区 overview 建议长度下界；不强制填满。
+  overview_max_chars: 200 # 写作目标上界及 prompt/API schema 上限；目标区间 150–200 字符。
+  overview_validation_max_chars: 250 # 程序实际硬上限；超限带错误反馈重试。
   validation_retries: 2 # 社区描述 JSON、字段或长度校验失败后的额外修正次数。
 
 # 在线检索：doc_ids 只约束原文 chunk 范围，自动社区扩展不受该范围限制。
 retrieval:
-  mode: naive # naive：chunks+去重文档 overview；community：再执行固定叶社区扩展。wiki 暂未实现。
+  mode: naive # naive：chunk+文档概览；community：再扩展社区；community_guide：先搜索并只注入社区和文档概览。
   search_mode: vector # 默认 chunk 搜索方式：vector / keyword / hybrid，可被工具参数或 CLI 覆盖。
   chunk_k: 12 # 每次搜索最终返回的 chunk 数量上限。
   doc_k: 3 # 按 chunk 排名首次出现顺序选前 k 个不同文档，用于本体叶社区及最大关联边扩展。
@@ -92,7 +95,7 @@ retrieval:
   bm25_epsilon: 0.25 # BM25Okapi 负 IDF 替换系数，乘以语料的平均 IDF。
   read_chunk_limit: 10 # read_chunks 工具一次最多接收的 chunk 顺序编号数量，编号从 0 开始。
 
-# 两种检索模式共用 Agent；去重集合覆盖一次用户问题的全部轮次，新问题重置。
+# 三种检索模式共用 Agent；去重集合覆盖一次用户问题的全部轮次，新问题重置。
 agent:
   tool_concurrency: 5 # 单个问题同一轮最多并发执行的工具数；1 为串行，embedding 请求仍受 embedding.concurrency 限制。
   max_rounds: 15 # 单个问题最多模型调用轮数；最后一轮禁止工具调用，只生成最终回答。
@@ -102,6 +105,7 @@ agent:
 prompts:
   document: prompts/document.txt # 文档逐片累计综合及最后一片生成全文 overview 的指令。
   community: prompts/community.txt # 基于全部覆盖文档 overview 生成社区短名称和总览的指令。
+  community_guide: prompts/community_guide.txt # 仅 community_guide 模式注入的初始导览说明。
   agent: prompts/agent.txt # Agent 检索、读取、去重信息使用及回答行为指令。
   question: prompts/question.txt # 每题初始用户 prompt 模板，使用 {question} 插入原始问题。
   judge: prompts/judge.txt # LLM 评分 prompt；评分模型和并发复用问答设置，输出上限采用服务端默认值。

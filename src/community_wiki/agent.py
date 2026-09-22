@@ -5,6 +5,7 @@ import json
 import uuid
 from collections import Counter
 from dataclasses import dataclass
+from string import Template
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -125,7 +126,15 @@ class Agent:
             raise ValueError("Unknown doc_ids in question scope")
         # Every question owns its messages, tool context and deduplication state.
         messages = [
-            {"role": "system", "content": self.config.prompts.agent.read_text(encoding="utf-8")}
+            {
+                "role": "system",
+                "content": Template(
+                    self.config.prompts.agent.read_text(encoding="utf-8")
+                ).substitute(
+                    read_chunk_limit=self.config.retrieval.read_chunk_limit,
+                    max_identical_tool_calls=self.config.agent.max_identical_tool_calls,
+                ),
+            }
         ]
         messages.append(
             {
@@ -146,6 +155,19 @@ class Agent:
         run_id = run_id or uuid.uuid4().hex
         self.store.save_run(run_id, self.retriever.mode, "running", messages)
         try:
+            if self.retriever.mode == "community_guide":
+                context = await self.retriever.search(
+                    question, state, doc_ids=None if scope is None else sorted(scope)
+                )
+                context.pop("chunks", None)
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": self.config.prompts.community_guide.read_text(encoding="utf-8"),
+                    }
+                )
+                messages.append({"role": "user", "content": dumps({"initial_context": context})})
+                self.store.save_run(run_id, self.retriever.mode, "running", messages)
             for round_index in range(self.config.agent.max_rounds):
                 count_round()
                 last = round_index == self.config.agent.max_rounds - 1

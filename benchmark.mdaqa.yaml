@@ -1,9 +1,9 @@
-# MDAQA 前 100 条 QA：143 篇 PDF，共享一次文档入库与社区构建。
-dataset_dir: data/benchmarks/mdaqa_first_100 # 服务器 prepared 数据的原样副本。
-output_dir: data/runs/mdaqa_first_100_naive_community # 独立实验输出，不覆盖此前结果。
-database: data/runs/mdaqa_first_100_naive_community/index.sqlite3 # 独立数据库，编号从 D0001 开始。
-log_file: data/runs/mdaqa_first_100_naive_community/run.log # 入库、聚类、问答与评分日志。
-start: 0 # 按准备好的 QA 文件顺序取样。
-count: 100 # 100 条 QA 全部执行。
-modes: [naive, community] # 两种模式分别问答和 LLM judge。
-concurrency: 5 # 问答与评分并发；其余并发由 config.yaml 控制，当前也为 5。
+# 使用 config.yaml 中统一的文档与社区提示词；新实验结果与历史结果隔离。
+dataset_dir: data/benchmarks/mdaqa_first_100 # prepared 原文和 QA 文件。
+output_dir: data/runs/unified_prompts/mdaqa # 独立新结果目录，保留旧轮。
+database: data/runs/unified_prompts/mdaqa/index.sqlite3 # 独立新索引，避免覆盖历史数据。
+log_file: data/runs/unified_prompts/mdaqa/run.log # 当前实验日志。
+start: 0 # 从第一题开始。
+count: 100 # 与既有实验的题目集合一致。
+modes: [naive, community] # 共用一次本数据集的索引。
+concurrency: 5 # 问答/评测并发；模型及入库并发由 config.yaml 控制。

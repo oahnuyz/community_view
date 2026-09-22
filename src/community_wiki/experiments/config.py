@@ -1,12 +1,11 @@
 """Shared settings for every prepared-format dataset."""
 
 from pathlib import Path
-from typing import Literal
 
 import yaml
 from pydantic import Field, model_validator
 
-from ..config import Section
+from ..config import RetrievalMode, Section
 
 
 class BenchmarkConfig(Section):
@@ -16,7 +15,7 @@ class BenchmarkConfig(Section):
     log_file: Path
     start: int = Field(ge=0)
     count: int | None = Field(gt=0)
-    modes: list[Literal["naive", "community"]] = Field(min_length=1)
+    modes: list[RetrievalMode] = Field(min_length=1)
     concurrency: int = Field(gt=0)
 
     @model_validator(mode="after")

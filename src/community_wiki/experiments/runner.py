@@ -10,6 +10,7 @@ from dataclasses import asdict
 
 from ..agent import Agent
 from ..communities import graph_signature
+from ..config import COMMUNITY_MODES
 from ..credentials import Credentials
 from ..ingest import digest
 from ..llm import ModelClient
@@ -27,7 +28,9 @@ log = logging.getLogger(__name__)
 
 async def predict(dataset, settings, config, store, client):
     verify_index(dataset, config, store, complete=True)
-    if "community" in settings.modes and store.meta("graph_signature") != graph_signature(config):
+    if any(mode in COMMUNITY_MODES for mode in settings.modes) and store.meta(
+        "graph_signature"
+    ) != graph_signature(config):
         raise ValueError("Community settings changed; run benchmark --stage index")
     signature = digest(
         dumps(

@@ -10,9 +10,10 @@ for the WHOLE document, not just this fragment. This also applies to a one-fragm
 Mandatory output limits (characters, NOT words or tokens; count spaces and punctuation too):
 - title: at most ${title_max_chars} characters. Shorten the original title if necessary.
 - keywords: 1 to ${keyword_count} entries, each at most ${keyword_max_chars} characters.
-- summary: at most ${summary_max_chars} characters TOTAL, including spaces and punctuation.
+- summary: aim for ${summary_target_min_chars}–${summary_max_chars} characters TOTAL, including spaces and punctuation.
+  Prefer fewer characters when the source has little information; do not pad the summary.
 - stage_summary (non-final fragments only): at most ${stage_max_chars} characters TOTAL.
-These are hard upper bounds, not target lengths. Stay comfortably below them.
+Keep summary within its target range when useful; all other limits are hard upper bounds.
 Write the final summary as a compact paragraph with only the most important findings and qualifications.
 Do not enumerate every detail or repeat the title. Prefer a shorter accurate summary over a long one.
 Before returning JSON, check every field against these limits and shorten any overlong text.

@@ -88,8 +88,8 @@ async def test_prompts_render_configured_length_limits(config, text, client):
     client.json_completion = capture
     await document_overview("alpha text", config, text, client)
     await describe_community([], config, client)
-    assert "summary: at most 321 characters" in prompts[0]
-    assert "overview: at most 234 characters" in prompts[1]
+    assert "summary: aim for 300–321 characters" in prompts[0]
+    assert "overview: aim for 150–234 characters" in prompts[1]
     assert all("${" not in prompt for prompt in prompts)
     assert all("spaces and punctuation" in prompt for prompt in prompts)
 
@@ -107,18 +107,21 @@ async def test_prompts_render_configured_length_limits(config, text, client):
         (1200, 1160, True),
         (1200, 1200, True),
         (1200, 1201, False),
+        (1500, 1500, True),
+        (1500, 1501, False),
     ],
 )
 async def test_summary_schema_and_local_limit_are_independent(
     config, text, limit, length, accepted
 ):
+    config.overview.summary_max_chars = 800
     config.overview.summary_validation_max_chars = limit
 
     class Client:
         async def json_completion(self, system, payload, schema, retries, validate, purpose):
             assert schema["properties"]["summary"]["maxLength"] == 800
             assert payload["output_schema"] == schema
-            assert "summary: at most 800 characters" in system
+            assert "summary: aim for 300–800 characters" in system
             assert str(limit) not in system
             value = {"title": "Title", "keywords": ["keyword"], "summary": "a" * length}
             validate(value)

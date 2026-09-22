@@ -124,7 +124,7 @@ async def test_indexing_and_per_qa_totals_trace_and_prompt(
         user_message = next(m["content"] for m in trace["messages"] if m["role"] == "user")
         assert (
             user_message
-            == f"Answer this question as briefly as possible. Use only the information in the context.Do not use any external source.\n\nQuestion: {row['question']}\n"
+            == f"Answer this question as briefly as possible. Use only the information in the context. Do not use any external source.\n\nQuestion: {row['question']}\n"
         )
         assert trace["messages"][-1]["content"] == row["answer"]
         assert "GOLD_MUST_NOT_LEAK" not in json.dumps(trace)

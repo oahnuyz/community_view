@@ -6,11 +6,12 @@ import pytest
 import yaml
 
 
+@pytest.mark.parametrize("stages", [["all"], ["ask", "judge"], ["cluster", "ask", "judge"]])
 @pytest.mark.parametrize(
     "continue_on_error,expected", [(True, ["failed", "complete"]), (False, ["failed", "skipped"])]
 )
 def test_queue_waits_for_each_job_and_records_failures(
-    tmp_path, monkeypatch, continue_on_error, expected
+    tmp_path, monkeypatch, continue_on_error, expected, stages
 ):
     spec = importlib.util.spec_from_file_location(
         "benchmark_queue", Path(__file__).resolve().parents[1] / "scripts/run_benchmark_queue.py"
@@ -43,6 +44,7 @@ def test_queue_waits_for_each_job_and_records_failures(
                 "output_dir": "queue",
                 "experiments": files,
                 "continue_on_error": continue_on_error,
+                "stages": stages,
             }
         )
     )
@@ -50,6 +52,7 @@ def test_queue_waits_for_each_job_and_records_failures(
 
     class Process:
         def __init__(self, command, **kwargs):
+            assert command[command.index("--stages") + 1 :] == stages
             self.index = len(events) // 2
             assert len(events) % 2 == 0  # No next launch before previous wait completed.
             assert kwargs["stdin"] == module.subprocess.DEVNULL

@@ -83,11 +83,22 @@ class OverviewConfig(Section):
     fragment_tokens: int = Field(gt=0)
     title_max_chars: int = Field(gt=0)
     summary_max_chars: int = Field(gt=0)
-    summary_validation_max_chars: int = Field(default=1000, gt=0)
+    summary_target_min_chars: int = Field(default=300, gt=0)
+    summary_validation_max_chars: int = Field(default=450, gt=0)
     keyword_count: int = Field(gt=0)
     keyword_max_chars: int = Field(gt=0)
     stage_max_chars: int = Field(gt=0)
     validation_retries: int = Field(ge=0, le=2)
+
+    @model_validator(mode="after")
+    def summary_lengths(self):
+        if (
+            not self.summary_target_min_chars
+            <= self.summary_max_chars
+            <= self.summary_validation_max_chars
+        ):
+            raise ValueError("Summary target range must fit within the local validation limit")
+        return self
 
 
 class GraphConfig(Section):
@@ -106,17 +117,31 @@ class CommunityConfig(Section):
     description_concurrency: int = Field(gt=0)
     name_max_chars: int = Field(gt=0)
     overview_max_chars: int = Field(gt=0)
+    overview_target_min_chars: int = Field(default=150, gt=0)
+    overview_validation_max_chars: int = Field(default=250, gt=0)
     validation_retries: int = Field(ge=0, le=2)
 
     @model_validator(mode="after")
     def iterations_valid(self):
         if self.iterations == 0:
             raise ValueError("iterations must be -1 or positive")
+        if (
+            not self.overview_target_min_chars
+            <= self.overview_max_chars
+            <= self.overview_validation_max_chars
+        ):
+            raise ValueError(
+                "Community overview target range must fit within the local validation limit"
+            )
         return self
 
 
+RetrievalMode = Literal["naive", "community", "community_guide"]
+COMMUNITY_MODES = ("community", "community_guide")
+
+
 class RetrievalConfig(Section):
-    mode: Literal["naive", "community"]
+    mode: RetrievalMode
     search_mode: Literal["vector", "keyword", "hybrid"]
     chunk_k: int = Field(gt=0)
     doc_k: int = Field(gt=0)
@@ -141,6 +166,7 @@ class PromptConfig(Section):
     agent: Path
     question: Path
     judge: Path
+    community_guide: Path = Path("prompts/community_guide.txt")
 
 
 class Config(Section):
@@ -162,7 +188,10 @@ class Config(Section):
         config = cls.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
         for section, names in (
             (config.storage, ("database", "log_file")),
-            (config.prompts, ("document", "community", "agent", "question", "judge")),
+            (
+                config.prompts,
+                ("document", "community", "agent", "question", "judge", "community_guide"),
+            ),
         ):
             for name in names:
                 setattr(section, name, (path.parent / getattr(section, name)).resolve())

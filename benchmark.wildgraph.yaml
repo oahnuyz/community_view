@@ -1,9 +1,0 @@
-# WildGraphBench_summary 的 health 子集：55 条 QA、509 篇 TXT，共享一次入库与社区构建。
-dataset_dir: data/benchmarks/wildgraphbench_summary_health # 服务器 prepared 数据的原样副本。
-output_dir: data/runs/wildgraphbench_summary_health_naive_community # 独立实验输出，不覆盖此前结果。
-database: data/runs/wildgraphbench_summary_health_naive_community/index.sqlite3 # 独立数据库，文档编号从 D0001 开始。
-log_file: data/runs/wildgraphbench_summary_health_naive_community/run.log # 入库、聚类、问答与评分日志。
-start: 0 # 按准备好的 QA 文件顺序取样。
-count: 55 # 55 条 QA 全部执行。
-modes: [naive, community] # 两种模式分别问答和 LLM judge。
-concurrency: 5 # 问答与评分并发；其余并发由 config.yaml 控制，当前也为 5。

@@ -8,6 +8,7 @@ from concurrent.futures import ProcessPoolExecutor
 import igraph as ig
 import leidenalg
 
+from .community_ids import shorten_community_ids
 from .graph import build_edges
 from .ingest import digest
 from .models import Community
@@ -130,6 +131,7 @@ async def cluster(config, store, client):
         raise ValueError("No documents; ingest before clustering")
     edges = await asyncio.to_thread(build_edges, documents, config.graph)
     communities = await build_communities(documents, edges, config, client)
+    communities, _ = shorten_community_ids(store, communities)
     store.publish_graph(
         edges, communities, revision, graph_signature(config), community_links(communities, edges)
     )

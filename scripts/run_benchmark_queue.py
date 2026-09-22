@@ -22,8 +22,12 @@ def now():
 def run_queue(path):
     path = Path(path).resolve()
     spec = yaml.safe_load(path.read_text())
-    if set(spec) != {"config", "output_dir", "continue_on_error", "experiments"}:
+    required = {"config", "output_dir", "continue_on_error", "experiments"}
+    if not required <= set(spec) or set(spec) - required - {"stages"}:
         raise ValueError("Unexpected queue configuration fields")
+    stages = spec.get("stages", ["all"])
+    if stages not in (["all"], ["cluster", "ask", "judge"], ["ask", "judge"], ["ask"], ["judge"]):
+        raise ValueError("Queue stages must be all, cluster/ask/judge, ask/judge, ask, or judge")
     if not isinstance(spec["continue_on_error"], bool) or not spec["experiments"]:
         raise ValueError("Queue requires a boolean continue_on_error and experiment entries")
     root = path.parent
@@ -59,6 +63,8 @@ def run_queue(path):
                     str(config),
                     "--settings",
                     str(entry),
+                    "--stages",
+                    *stages,
                 ]
                 print(f"{now()} Starting {entry.name}", flush=True)
                 try:

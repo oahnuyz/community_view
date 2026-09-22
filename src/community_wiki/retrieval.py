@@ -5,6 +5,7 @@ from dataclasses import asdict
 import numpy as np
 from rank_bm25 import BM25Okapi
 
+from .config import COMMUNITY_MODES
 from .ingest import embedding_signature
 from .models import QuestionState, SearchHit
 from .text import lexical_tokens
@@ -14,21 +15,21 @@ class Retriever:
     def __init__(self, config, store, client, mode=None):
         self.config, self.client = config, client
         self.mode = mode or config.retrieval.mode
-        if self.mode not in ("naive", "community"):
-            raise ValueError("Only naive and community modes are implemented")
+        if self.mode not in ("naive", *COMMUNITY_MODES):
+            raise ValueError("Unknown retrieval mode")
         documents, self.chunks, self.edges, communities, revision, graph_revision = store.snapshot()
         if not documents or not self.chunks:
             raise ValueError("No indexed documents")
         if store.meta("embedding_signature") != embedding_signature(config):
             raise ValueError("Embedding configuration does not match stored index")
-        if self.mode == "community" and str(revision) != graph_revision:
+        if self.mode in COMMUNITY_MODES and str(revision) != graph_revision:
             raise ValueError("Community graph is missing or stale; run cluster after ingestion")
         self.documents = {d.doc_id: d for d in documents}
         self.communities = {c.community_id: c for c in communities}
         self.leaves = {
             doc_id: c.community_id for c in communities if c.is_leaf for doc_id in c.doc_ids
         }
-        if self.mode == "community" and set(self.leaves) != set(self.documents):
+        if self.mode in COMMUNITY_MODES and set(self.leaves) != set(self.documents):
             raise ValueError("Community leaves do not cover the indexed documents")
         self.incident = {doc_id: [] for doc_id in self.documents}
         for edge in self.edges:
@@ -136,7 +137,7 @@ class Retriever:
         document_ids = list(dict.fromkeys(hit.doc_id for hit in hits))
         result = {"chunks": [asdict(hit) for hit in hits], "document_overviews": []}
         community_ids = []
-        if self.mode == "community":
+        if self.mode in COMMUNITY_MODES:
             # Select strongest incident edges before applying deduplication: no fallback to runner-up.
             community_ids = [
                 i for i in self.selected_communities(hits) if i not in state.seen_communities
@@ -156,7 +157,10 @@ class Retriever:
         for doc_id in dict.fromkeys(document_ids):
             if doc_id not in state.seen_overviews:
                 result["document_overviews"].append(
-                    {"doc_id": doc_id, **self.documents[doc_id].overview.model_dump()}
+                    {
+                        "doc_id": doc_id,
+                        **self.documents[doc_id].overview.model_dump(exclude={"keywords"}),
+                    }
                 )
         state.seen_overviews.update(document_ids)
         state.seen_communities.update(community_ids)

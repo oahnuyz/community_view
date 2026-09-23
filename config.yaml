@@ -70,16 +70,17 @@ graph:
 # 层次社区：所有社区都生成描述，当前检索只使用叶社区。
 community:
   max_documents: 6 # 覆盖文档数超过该值即尝试拆分；失败记日志并保留叶社区，不强制满足阈值。
+  llm_split_fallback: false # 超阈值且 Leiden 无法拆分时，允许 LLM 拆分一次；可选择不拆，生成的子社区不再拆分。
   cluster_workers: 5 # 不同分支的 Leiden 聚类进程数；可与社区描述生成同时进行。
   resolution: 1.0 # Leiden RB modularity 分辨率；更高通常倾向更小社区，但不保证指定大小。
   seed: 42 # Leiden 随机种子；相同数据和库版本下便于复现。
   iterations: -1 # -1 表示迭代至收敛，也可填写正整数；不允许 0。
-  description_concurrency: 5 # 同时生成社区 name/overview 的任务数，还受 model.concurrency 限制。
+  description_concurrency: 5 # 社区 name/overview 和可选 LLM 拆分请求共用的并发上限，还受 model.concurrency 限制。
   name_max_chars: 100 # 社区名称最大字符数。
   overview_target_min_chars: 150 # 社区 overview 建议长度下界；不强制填满。
   overview_max_chars: 200 # 写作目标上界及 prompt/API schema 上限；目标区间 150–200 字符。
   overview_validation_max_chars: 250 # 程序实际硬上限；超限带错误反馈重试。
-  validation_retries: 2 # 社区描述 JSON、字段或长度校验失败后的额外修正次数。
+  validation_retries: 2 # 社区描述或 LLM 拆分响应校验失败后的额外修正次数，最多两次；拆分最终失败则保留原叶社区。
 
 # 在线检索：doc_ids 只约束原文 chunk 范围，自动社区扩展不受该范围限制。
 retrieval:
@@ -105,6 +106,7 @@ agent:
 prompts:
   document: prompts/document.txt # 文档逐片累计综合及最后一片生成全文 overview 的指令。
   community: prompts/community.txt # 基于全部覆盖文档 overview 生成社区短名称和总览的指令。
+  community_split: prompts/community_split.txt # 仅启用 llm_split_fallback 且 Leiden 无法拆分时使用，不注入 QA 上下文。
   community_guide: prompts/community_guide.txt # 仅 community_guide 模式注入的初始导览说明。
   agent: prompts/agent.txt # Agent 检索、读取、去重信息使用及回答行为指令。
   question: prompts/question.txt # 每题初始用户 prompt 模板，使用 {question} 插入原始问题。

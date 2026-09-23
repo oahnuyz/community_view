@@ -89,7 +89,15 @@ flowchart TD
 1. 创建社区记录，保存 `community_id, level, parent_id, child_ids, doc_ids`；其中 doc_ids 为其覆盖的全部文档。
 2. 启动 name 和 overview 生成，输入该社区**全部成员文档 overview**。父社区同样如此，不使用子社区描述代替。
 3. 若文档数大于 `max_documents`，同时在该社区诱导子图上继续 Leiden。不重新全库寻找邻居。
-4. 成功得到两个以上分组时创建子社区，递归执行；若仍只有一个分组，保留叶社区，`split_status=unsplittable`，日志记录社区 ID、文档数、阈值和原因。
+4. 成功得到两个以上分组时创建子社区，递归执行；若仍只有一个分组，默认保留叶社区，`split_status=unsplittable`，日志记录社区 ID、文档数、阈值和原因。
+
+可开启 `community.llm_split_fallback`（默认 false）。只在超阈值且 Leiden 正常返回单一分组时触发；等待当前社区描述完成，发送 name、overview、max_documents 及全部成员的 doc_id/title/keywords/summary。`prompts/community_split.txt` 要求模型只返回 `{"split": bool, "groups": [[doc_id, ...], ...]}`，不生成理由或子社区描述。
+
+`split=false` 必须返回空 groups；`split=true` 必须有至少两个非空分组，且全部原成员恰好出现一次。重复、遗漏、未知 ID、格式错误通过现有 JSON 修正机制反馈，最多修正两次。API 失败沿用原重试规则；请求或分组校验最终失败时保留原叶社区并记日志。有效子社区继续生成 name/overview，但作为终止分支，不再运行 Leiden 或 LLM 拆分；超过阈值也接受。Leiden 异常、必需的 name/overview 生成失败和任务取消仍按原行为处理，不伪装成成功拆分。
+
+状态记录：`llm_split` 为成功拆分的父社区，`llm_declined` 为主动不拆，`llm_failed` 为请求或校验最终失败，`llm_leaf_oversized` 为拆分后仍超阈值的叶社区；满足阈值的子社区保持 `within_threshold`。所有节点继续使用短 ID 并保存完整层次关系，社区间关联边仍从原文档边计算。
+
+不同分支可以并发，拆分请求与社区描述共用 `description_concurrency`，还受全局 `model.concurrency` 限制。等待父社区描述时不持有请求并发槽；全部新增调用的 usage（含重试）和耗时计入社区构建阶段。开关关闭时保持 v2 的图签名，不要求读取拆分 prompt；开启后开关与 prompt 内容都参与图签名，修改后需要重新构建社区。
 
 无边节点保留为单文档社区，不丢弃。不同分支的 CPU 聚类使用进程池，描述使用异步并发，两类任务可以重叠。默认分辨率不会保证拆分到指定大小；这是“尝试拆分”的约定行为。
 
@@ -207,15 +215,16 @@ doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社�
 | graph.min_weight | 0.25 | 通过候选规则后保留边的最低权重；零权重始终排除 |
 | graph.vector_weight | 0.7 | 混合建边 α，关键词权重为 1−α |
 | community.max_documents | 6 | 超过即尝试拆分的文档数量 |
+| community.llm_split_fallback | false | 对 Leiden 无法拆分的超阈值社区使用一次 LLM 后备拆分 |
 | community.cluster_workers | 2 | 并发 CPU 聚类进程数 |
 | community.resolution | 1.0 | Leiden 分辨率；更高通常倾向更小社区 |
 | community.seed | 42 | 固定随机种子；跨库版本不保证完全相同结果 |
 | community.iterations | -1 | -1 运行至收敛，或指定正数迭代次数 |
-| community.description_concurrency | 4 | 并发社区描述数，还受 model.concurrency 限制 |
+| community.description_concurrency | 5 | 社区描述与 LLM 拆分的共享并发数，还受 model.concurrency 限制 |
 | community.name_max_chars | 100 | 社区名最大字符数 |
 | community.overview_target_min_chars / overview_max_chars | 150 / 200 | 社区 overview 写作目标区间，schema 上限 200 |
 | community.overview_validation_max_chars | 250 | 社区 overview 本地校验硬上限 |
-| community.validation_retries | 2 | 社区描述格式/长度错误修正次数 |
+| community.validation_retries | 2 | 社区描述或 LLM 分组响应错误的额外修正次数 |
 
 ### retrieval / agent / prompts
 
@@ -237,6 +246,7 @@ doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社�
 | agent.max_identical_tool_calls | 2 | 每个问题相同工具+参数可执行次数 |
 | prompts.document | prompts/document.txt | 文档累计综合及最终 overview 指令 |
 | prompts.community | prompts/community.txt | 社区短描述指令 |
+| prompts.community_split | prompts/community_split.txt | 可选 LLM 分组指令，不进入 QA 上下文 |
 | prompts.community_guide | prompts/community_guide.txt | 仅社区导览模式注入的初始上下文说明 |
 | prompts.agent | prompts/agent.txt | 问答与工具使用系统指令 |
 | prompts.question | prompts/question.txt | 用户指定的简短回答模板，用 {question} 插入问题 |
@@ -256,7 +266,8 @@ doc_ids 只限制原始 chunk 搜索。即使只搜索一篇文档，关联社�
 | src/community_wiki/overviews.py | 文档逐片累计综合、社区全成员描述、输出长度校验 |
 | src/community_wiki/ingest.py | 批量入库、缓存判定、文档级事务保存 |
 | src/community_wiki/graph.py | 关键词表示、三模式候选边与权重 |
-| src/community_wiki/communities.py | 递归 Leiden、并行分支、社区描述、社区关系与快照发布 |
+| src/community_wiki/communities.py | 递归 Leiden、可选 LLM 后备分组、并行分支、社区描述及快照发布 |
+| src/community_wiki/community_split.py | LLM 分组协议、完整互斥分配校验 |
 | src/community_wiki/retrieval.py | 向量/BM25/RRF、doc_ids 过滤、固定社区扩展、问题级去重 |
 | src/community_wiki/agent.py | 工具 schema、参数校验、原生 agent loop、问答历史、轨迹保存 |
 | src/community_wiki/store.py | SQLite schema、原子事务、版本、查询与运行记录 |

@@ -41,6 +41,7 @@ async def predict(dataset, settings, config, store, client):
                     key: path.read_text(encoding="utf-8")
                     for key, path in config.prompts
                     if key != "judge"
+                    and (key != "community_split" or config.community.llm_split_fallback)
                 },
                 "qa_concurrency": settings.concurrency,
                 "revision": store.revision,

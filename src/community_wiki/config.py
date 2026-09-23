@@ -110,6 +110,7 @@ class GraphConfig(Section):
 
 class CommunityConfig(Section):
     max_documents: int = Field(gt=0)
+    llm_split_fallback: bool = False
     cluster_workers: int = Field(gt=0)
     resolution: float = Field(gt=0)
     seed: int = Field(ge=0, le=2147483647)
@@ -167,6 +168,7 @@ class PromptConfig(Section):
     question: Path
     judge: Path
     community_guide: Path = Path("prompts/community_guide.txt")
+    community_split: Path = Path("prompts/community_split.txt")
 
 
 class Config(Section):
@@ -190,7 +192,15 @@ class Config(Section):
             (config.storage, ("database", "log_file")),
             (
                 config.prompts,
-                ("document", "community", "agent", "question", "judge", "community_guide"),
+                (
+                    "document",
+                    "community",
+                    "agent",
+                    "question",
+                    "judge",
+                    "community_guide",
+                    "community_split",
+                ),
             ),
         ):
             for name in names:

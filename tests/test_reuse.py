@@ -21,7 +21,9 @@ async def test_reuse_preserves_source_and_vectors(
     original = store.db.execute("SELECT * FROM documents ORDER BY doc_id").fetchall()
     chunks = store.db.execute("SELECT * FROM chunks ORDER BY doc_id,ordinal").fetchall()
     execution = tmp_path / "execution.json"
-    execution.write_text(json.dumps({"config": source_config.model_dump(mode="json")}))
+    historical = source_config.model_dump(mode="json")
+    historical["community"].pop("llm_split_fallback")  # A v2 snapshot predates the option.
+    execution.write_text(json.dumps({"config": historical}))
     destination = benchmark_settings.model_copy(deep=True)
     destination.output_dir = tmp_path / "new-run"
     destination.database = destination.output_dir / "index.sqlite3"
@@ -32,6 +34,7 @@ async def test_reuse_preserves_source_and_vectors(
         config.storage.database, execution, benchmark_settings.dataset_dir, destination, config
     )
     assert record["documents"] == 2 and record["new_indexing_tokens"] == 0
+    assert "llm_split_fallback" not in record["historical_config"]["community"]
     assert len(client.calls) == calls
     assert store.db.execute("SELECT * FROM documents ORDER BY doc_id").fetchall() == original
     copied = Store(destination.database)

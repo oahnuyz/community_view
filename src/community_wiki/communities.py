@@ -9,6 +9,7 @@ import igraph as ig
 import leidenalg
 
 from .community_ids import shorten_community_ids
+from .community_split import split_community
 from .graph import build_edges
 from .ingest import digest
 from .models import Community
@@ -38,13 +39,20 @@ def partition(doc_ids, edges, resolution, seed, iterations):
 
 
 def graph_signature(config):
+    # Disabled fallback preserves v2 graph compatibility, even without the new prompt file.
+    community_config = config.community.model_dump(exclude={"llm_split_fallback"})
+    optional = {}
+    if config.community.llm_split_fallback:
+        community_config["llm_split_fallback"] = True
+        optional["split_prompt"] = config.prompts.community_split.read_text(encoding="utf-8")
     return digest(
         dumps(
             {
                 "graph": config.graph.model_dump(),
-                "community": config.community.model_dump(),
+                "community": community_config,
                 "model": config.model.model_dump(),
                 "prompt": config.prompts.community.read_text(encoding="utf-8"),
+                **optional,
             }
         )
     )
@@ -75,9 +83,17 @@ async def build_communities(documents, edges, config, client, partitioner=None):
             raise ValueError("Partition does not cover every document exactly once")
         return sorted([sorted(g) for g in groups], key=lambda g: g[0])
 
-    async def branch(ids, parent_id, level):
+    async def branch(ids, parent_id, level, *, terminal=False):
         identity = digest(dumps({"parent": parent_id, "documents": sorted(ids)}))
         community = Community(identity, level, parent_id, sorted(ids))
+        if terminal and len(ids) > c.max_documents:
+            community.split_status = "llm_leaf_oversized"
+            log.info(
+                "LLM child retained as oversized leaf: id=%s documents=%s threshold=%s",
+                identity,
+                len(ids),
+                c.max_documents,
+            )
         communities.append(community)
 
         async def describe():
@@ -88,28 +104,66 @@ async def build_communities(documents, edges, config, client, partitioner=None):
                 community.name, community.overview = result["name"], result["overview"]
 
         async def descendants():
-            if len(ids) <= c.max_documents:
+            if terminal or len(ids) <= c.max_documents:
                 return
             groups = await split(ids)
+            llm_partition = False
             if len(groups) == 1:
                 community.split_status = "unsplittable"
-                log.warning(
-                    "Community split failed: id=%s documents=%s threshold=%s; "
-                    "Leiden returned one partition; retained as leaf",
+                if not c.llm_split_fallback:
+                    log.warning(
+                        "Community split failed: id=%s documents=%s threshold=%s; "
+                        "Leiden returned one partition; retained as leaf",
+                        identity,
+                        len(ids),
+                        c.max_documents,
+                    )
+                    return
+                # Await this branch's description without holding an LLM semaphore slot.
+                await description_task
+                log.info(
+                    "Leiden returned one partition; trying LLM split: id=%s documents=%s threshold=%s",
                     identity,
                     len(ids),
                     c.max_documents,
                 )
-                return
-            community.split_status = "split"
+                try:
+                    async with slots:
+                        groups = await split_community(
+                            community, [docs[i] for i in community.doc_ids], config, client
+                        )
+                except Exception as exc:
+                    # Cancellation still propagates. Only the optional split request is softened;
+                    # Leiden errors and required community descriptions keep their normal semantics.
+                    community.split_status = "llm_failed"
+                    log.warning(
+                        "LLM community split failed; retained as leaf: id=%s documents=%s error=%s: %s",
+                        identity,
+                        len(ids),
+                        type(exc).__name__,
+                        exc,
+                    )
+                    return
+                if not groups:
+                    community.split_status = "llm_declined"
+                    log.info("LLM declined community split; retained as leaf: id=%s", identity)
+                    return
+                llm_partition = True
+                log.info(
+                    "LLM community split accepted: id=%s group_sizes=%s",
+                    identity,
+                    [len(group) for group in groups],
+                )
+            community.split_status = "llm_split" if llm_partition else "split"
             async with asyncio.TaskGroup() as tasks:
                 children = [
-                    tasks.create_task(branch(group, identity, level + 1)) for group in groups
+                    tasks.create_task(branch(group, identity, level + 1, terminal=llm_partition))
+                    for group in groups
                 ]
             community.child_ids = [task.result() for task in children]
 
         async with asyncio.TaskGroup() as tasks:
-            tasks.create_task(describe())
+            description_task = tasks.create_task(describe())
             tasks.create_task(descendants())
         return identity
 
@@ -147,7 +201,11 @@ async def cluster(config, store, client):
         "edges": len(edges),
         "communities": len(communities),
         "leaves": sum(c.is_leaf for c in communities),
-        "unsplittable": sum(c.split_status == "unsplittable" for c in communities),
+        "unsplittable": sum(
+            c.split_status in {"unsplittable", "llm_declined", "llm_failed"} for c in communities
+        ),
+        "llm_splits": sum(c.split_status == "llm_split" for c in communities),
+        "llm_oversized_leaves": sum(c.split_status == "llm_leaf_oversized" for c in communities),
     }
 
 

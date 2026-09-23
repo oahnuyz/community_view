@@ -31,6 +31,8 @@ def clone_index(source_database, source_execution, source_dataset, settings, con
     def compatible(section, ignored=()):
         before = {k: v for k, v in old[section].items() if k not in ignored}
         after = {k: v for k, v in new[section].items() if k not in ignored}
+        if section == "community":
+            before.setdefault("llm_split_fallback", False)
         if before != after:
             raise ValueError(f"Cannot reuse index: {section} configuration changed")
 

@@ -70,7 +70,8 @@
 | `graph.mode / neighbor_k` | hybrid / 15 | 建边方式 / 每个通道候选邻居数 |
 | `graph.vector_weight / min_weight` | 0.7 / 0.25 | 混合向量权重 / 保留边阈值 |
 | `community.max_documents` | 6 | 超过即尝试拆分，非强制上限 |
-| `community.cluster_workers / description_concurrency` | 5 / 5 | 聚类进程数 / 描述并发数 |
+| `community.llm_split_fallback` | false | Leiden 无法继续拆分的超阈值社区，是否让 LLM 再划分一次 |
+| `community.cluster_workers / description_concurrency` | 5 / 5 | 聚类进程数 / 描述与 LLM 拆分共用并发数 |
 | `agent.tool_concurrency` | 4 | 单个问题同一轮工具执行并发数；结果按调用顺序回填和去重，1 为串行 |
 | `community.overview_target_min_chars / overview_max_chars` | 150 / 200 | 社区 overview 写作目标区间；schema 上限为 200 |
 | `community.overview_validation_max_chars` | 250 | 本地社区 overview 硬上限；超限带错误反馈重试 |
@@ -78,6 +79,8 @@
 | `agent.max_rounds` | 8 | 单个问题模型调用轮数上限；末轮只生成答案 |
 
 表中列的是首版初始值；当前有效值以 `config.yaml` 为准。模型请求不设置输入/输出 token 上限，使用 API 服务端默认值。长文档分片、chunk 大小及简短 overview 字符长度约束仍保留。
+
+可选 `community.llm_split_fallback: true`：仅对超阈值且 Leiden 返回一个分组的社区触发。LLM 接收社区 name、overview 和所有成员的完整文档 overview（含 doc_id、title、keywords、summary），只返回 `split` 与 `groups`。分组必须完整覆盖文档且每篇恰好出现一次；可选择不拆分。有效子社区按原流程生成 name/overview，但不再递归拆分，即使仍超过阈值也保留。分组错误带具体反馈修正，最多两次；请求或校验最终失败则保留原叶社区并记日志。分组及新增描述耗费计入社区构建阶段，开关关闭时不调用此 prompt。开启或修改拆分 prompt 后需重新执行 cluster，文档及 embedding 无需重新生成。
 
 ## 验证与范围
 

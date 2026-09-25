@@ -11,3 +11,4 @@ benchmark*.local.yaml
 dist/
 api_keys.yaml
 docs/reports/
+/AGENTS.md

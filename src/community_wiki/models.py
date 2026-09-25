@@ -69,3 +69,5 @@ class SearchHit:
 class QuestionState:
     seen_communities: set[str] = field(default_factory=set)
     seen_overviews: set[str] = field(default_factory=set)
+    offered_answers: set[tuple[str, str]] = field(default_factory=set)
+    seen_answers: set[tuple[str, str]] = field(default_factory=set)

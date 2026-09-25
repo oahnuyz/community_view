@@ -102,6 +102,18 @@ agent:
   max_rounds: 15 # 单个问题最多模型调用轮数；最后一轮禁止工具调用，只生成最终回答。
   max_identical_tool_calls: 2 # 同一次问题中，相同工具和参数最多执行次数；超过后返回工具错误。
 
+# 可选问题视图：记录历史、提炼问题、逐题编译和按需读取。
+knowledge:
+  record_questions: false # 独立开关：记录外部问题与实际展示过的叶社区；编译内部问题不进入历史。
+  use_compiled: false # 独立开关：匹配提炼问题、展示view问题目录并允许读取答案；关闭时无新知识说明或工具。
+  concurrency: 3 # 不同社区的提炼、编译并发上限；每个社区内逐题运行独立agent loop。
+  question_k: 5 # 向量匹配的前k个提炼问题；取其所属社区，展示社区view中的完整问题目录。
+  min_question_similarity: 0.0 # 问题向量余弦最低阈值；零或负相似度始终排除。
+  read_answer_limit: 8 # read_view_answers一次最多选择的答案数，跨调用按问题独立去重。
+  validation_retries: 2 # 非法问题集（如重复问题、未知来源ID）带错误反馈的最大修正次数。
+  plan_prompt: prompts/knowledge_plan.txt # 根据社区及成员文档信息筛选、压缩、去重历史问题。
+  context_prompt: prompts/knowledge_context.txt # 只向启用新知识的问答说明view目录及答案读取工具。
+
 # 可单独编辑的指令模板，路径相对本 YAML 文件。
 prompts:
   document: prompts/document.txt # 文档逐片累计综合及最后一片生成全文 overview 的指令。

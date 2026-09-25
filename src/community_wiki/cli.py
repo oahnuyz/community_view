@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import fcntl
 import json
 import logging
 from dataclasses import asdict
@@ -33,6 +34,10 @@ def parser():
         default="prepare",
     )
     commands.add_parser("config-check", help="Validate configuration without contacting models")
+    knowledge = commands.add_parser(
+        "knowledge", help="Plan/compile knowledge from saved question-community mappings"
+    )
+    knowledge.add_argument("--stage", choices=["plan", "compile", "all"], default="all")
     for name in ("ingest", "build"):
         child = commands.add_parser(name)
         child.add_argument("paths", nargs="+")
@@ -126,6 +131,14 @@ async def run(args):
             config.text.encoding, config.storage.database.parent / "tokenizer_cache"
         )
         client = ModelClient(config, store, text)
+        if args.command == "knowledge":
+            from .knowledge import build_knowledge
+
+            with (config.storage.database.parent / ".knowledge.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                result = await build_knowledge(config, store, client, args.stage)
+            emit(result)
+            return int(result["failed"] > 0)
         if args.command in ("ingest", "build"):
             result = await ingest(args.paths, config, store, client, text)
             emit(asdict(result))

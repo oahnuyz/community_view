@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .knowledge_store import initialize
 from .models import Chunk, Community, Document, Edge, Overview
 
 
@@ -44,6 +45,7 @@ class Store:
             run_id TEXT PRIMARY KEY, created TEXT DEFAULT CURRENT_TIMESTAMP,
             mode TEXT, status TEXT, messages TEXT);
         """)
+        initialize(self.db)
 
     def close(self):
         self.db.close()

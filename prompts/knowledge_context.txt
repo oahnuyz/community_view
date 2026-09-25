@@ -1,0 +1,4 @@
+view_catalog lists questions in community views matched to the current question.
+Use read_view_answers with question_ids to read selected answers.
+These answers are reference material, not a final answer to the current question.
+Use search_chunks for missing information or to verify unclear claims.

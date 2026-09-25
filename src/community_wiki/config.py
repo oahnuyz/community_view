@@ -171,6 +171,18 @@ class PromptConfig(Section):
     community_split: Path = Path("prompts/community_split.txt")
 
 
+class KnowledgeConfig(Section):
+    record_questions: bool = False
+    use_compiled: bool = False
+    concurrency: int = Field(default=3, gt=0)
+    question_k: int = Field(default=5, gt=0)
+    min_question_similarity: float = Field(default=0.0, ge=0, le=1)
+    read_answer_limit: int = Field(default=8, gt=0)
+    validation_retries: int = Field(default=2, ge=0, le=2)
+    plan_prompt: Path = Path("prompts/knowledge_plan.txt")
+    context_prompt: Path = Path("prompts/knowledge_context.txt")
+
+
 class Config(Section):
     keys_file: Path
     storage: StorageConfig
@@ -183,12 +195,14 @@ class Config(Section):
     retrieval: RetrievalConfig
     agent: AgentConfig
     prompts: PromptConfig
+    knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
 
     @classmethod
     def load(cls, path: str | Path) -> "Config":
         path = Path(path).resolve()
         config = cls.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
         for section, names in (
+            (config.knowledge, ("plan_prompt", "context_prompt")),
             (config.storage, ("database", "log_file")),
             (
                 config.prompts,

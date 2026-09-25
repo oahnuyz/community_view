@@ -1,0 +1,4 @@
+Using the community and its member document overviews, keep only relevant historical questions.
+Shorten verbose questions without changing their meaning, and merge duplicates.
+Return JSON with questions; each item contains question and source_question_ids listing all original questions it represents.
+Do not answer questions. Return an empty questions list if none are relevant.

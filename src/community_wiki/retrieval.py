@@ -1,12 +1,14 @@
 """Chunk retrieval followed by a fixed, question-scoped community expansion pipeline."""
 
 from dataclasses import asdict
+from functools import cached_property
 
 import numpy as np
 from rank_bm25 import BM25Okapi
 
 from .config import COMMUNITY_MODES
 from .ingest import embedding_signature
+from .knowledge_store import graph_key
 from .models import QuestionState, SearchHit
 from .text import lexical_tokens
 
@@ -44,6 +46,11 @@ class Retriever:
             if any(self.tokens)
             else None
         )
+
+    @cached_property
+    def graph_key(self):
+        # Only knowledge recording/reading needs a content fingerprint of the graph.
+        return graph_key(list(self.documents.values()), self.edges, list(self.communities.values()))
 
     async def search(self, query: str, state: QuestionState, *, search_mode=None, doc_ids=None):
         hits = await self.search_hits(query, search_mode=search_mode, doc_ids=doc_ids)

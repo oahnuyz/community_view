@@ -52,7 +52,7 @@
 .venv/bin/community-wiki --config config.local.yaml inspect run --run-id RUN_ID
 ```
 
-`search`、`ask` 使用 `--doc-ids ID1 ID2` 限定原文 chunk 范围，不再支持 `--title`。`ask` 的范围约束适用于搜索；Agent 每次搜索可以用 doc_ids 进一步缩小范围。社区扩展仍可包含范围之外的文档。Agent 仅提供 `search_chunks` 工具；文档 overview 始终同时提供 `doc_id` 和 `title`，可从首次搜索结果获取 ID 后定向检索，也可用 `inspect documents` 查看本地文档 ID。
+`search`、`ask` 使用 `--doc-ids ID1 ID2` 限定原文 chunk 范围，不再支持 `--title`。`ask` 的范围约束适用于搜索；Agent 每次搜索可以用 doc_ids 进一步缩小范围。社区扩展仍可包含范围之外的文档。普通问答仅提供 `search_chunks` 工具；文档 overview 始终同时提供 `doc_id` 和 `title`，可从首次搜索结果获取 ID 后定向检索，也可用 `inspect documents` 查看本地文档 ID。
 
 每次 `ask` 和实验中的每条 QA 都有独立的消息历史与去重记录，单次问题内部保留完整工具历史。不提供交互式聊天。运行记录存于 SQLite，可以检查；当前没有从记录恢复执行的功能。
 
@@ -110,3 +110,24 @@
 `--stage all` 依次完成入库、问答和 LLM 评分。文档入库与社区生成也可分别用 `--stage ingest`、`--stage cluster` 执行；`index` 连续执行这两个入库阶段。`run` 是 `ask` 的兼容别名。其他数据集复制一份实验 YAML，修改路径即可；每个实验使用独立数据库和输出目录。
 
 每题的实际回答、gold answer、状态、耗时、token（含 embedding）、轮次，以及评分结果 `evaluation` 写在同一 `results.jsonl` 中；`traces/` 保存完整 Agent 可见对话。入库总耗时与总 token 在 `indexing_metrics.json`，QA 均值和评分均值在 `summary.json`。accuracy 为有效评分的平均值（0–4），normalized_accuracy 为 accuracy/4（0–1）；评分失败/跳过数量单列，缺失评分不记作 0。不输出逐 API 请求明细或缓存命中统计。完整口径见 [实验说明](docs/EXPERIMENTS.md)。
+
+## 社区问题视图
+
+`knowledge.record_questions` 独立控制外部问题与实际展示叶社区的映射记录；`knowledge.use_compiled` 独立控制是否使用问题视图。两者默认关闭；未启用视图时不注入视图说明，也不提供答案读取工具。是否启用 LLM 社区拆分仍由 `community.llm_split_fallback` 独立控制。
+
+`knowledge --stage plan` 根据社区和文档 overview 筛选、压缩、去重历史问题，保存每个提炼问题对应的原始问题。`knowledge --stage compile` 为每个问题运行独立 Agent，复用普通问答的 `agent.txt` 和 `question.txt`；每个社区内逐题编译，不同社区按 `knowledge.concurrency` 并发。`--stage all` 连续完成两步。成功答案可断点复用，完整社区视图以事务发布。
+
+一个社区一个逻辑 view，不设字符上限，不另外生成 view 文件。SQLite 的 `knowledge_views` 保存社区视图信息，`knowledge_answers` 按 `(graph_key, question_id)` 精确索引答案；例如 `C0001-Q0001`。每条答案保留原始问题文本、原始运行 ID，以及可用的外部 QA ID。旧版整篇编译知识不会自动作为新视图使用，已有文档、社区和历史问题映射仍可复用。
+
+启用视图问答时，先将用户问题与提炼问题做向量相似度匹配（`question_k`、`min_question_similarity`），向 Agent 展示去重后命中社区的完整问题目录，不直接注入答案。Agent 使用 `read_view_answers(question_ids)` 精确选读，每题去重，也可用 `search_chunks` 补充原文；当前不强制这两种工具的调用先后顺序。启用视图时，目录匹配替代 community_guide 的首次 chunk 搜索，后续搜索仍遵循所选检索模式。问题向量的生成和查询 token 分别计入编译阶段与 QA 阶段。
+
+提炼和编译使用 `--config` 中 `storage.database` 指定的数据库；普通实验仍使用实验 YAML 指定的数据库。先在相同索引上开启记录并完成问答，然后执行：
+
+```bash
+.venv/bin/community-wiki --config config.local.yaml knowledge --stage plan
+.venv/bin/community-wiki --config config.local.yaml knowledge --stage compile
+```
+
+`knowledge/` 保存阶段指标、编译进度和逐题 trace。重新聚类会改变图版本，旧映射和 view 不会自动用于新图。使用 view 的新实验应复制索引并选择新的输出目录；已发布答案变化后，不允许沿用旧问答结果续跑。
+
+`scripts/run_compiled_benchmark.py --settings PIPELINE.yaml` 可串联记录问答、提炼、编译、复制索引、新知识问答和评测。管线 YAML 包含 `mapping_config`、`mapping_settings`、`compiled_config`、`compiled_settings` 四个路径，均相对该 YAML 解析；记录阶段的模型配置与实验配置必须指向同一个数据库，前后实验输出目录和数据库必须分开。也可分别使用上述命令和现有 `benchmark --stage ask/judge` 运行各阶段。

@@ -13,6 +13,7 @@ from ..communities import graph_signature
 from ..config import COMMUNITY_MODES
 from ..credentials import Credentials
 from ..ingest import digest
+from ..knowledge_store import graph_key, published_views
 from ..llm import ModelClient
 from ..metrics import measure
 from ..retrieval import Retriever
@@ -46,6 +47,16 @@ async def predict(dataset, settings, config, store, client):
                 "qa_concurrency": settings.concurrency,
                 "revision": store.revision,
                 "communities": [asdict(c) for c in store.communities()],
+                "compiled_views": published_views(
+                    store, graph_key(store.documents(), store.edges(), store.communities())
+                )
+                if config.knowledge.use_compiled
+                else {},
+                "knowledge_context_prompt": config.knowledge.context_prompt.read_text(
+                    encoding="utf-8"
+                )
+                if config.knowledge.use_compiled
+                else None,
             }
         )
     )
@@ -93,7 +104,9 @@ async def predict(dataset, settings, config, store, client):
             }
             with measure(f"qa:{mode}:{question['id']}") as totals:
                 try:
-                    answer = await agents[mode].ask(question["question"], run_id=run_id)
+                    answer = await agents[mode].ask(
+                        question["question"], run_id=run_id, external_question_id=question["id"]
+                    )
                     result["answer"] = answer.answer
                 except Exception as exc:
                     result.update(status="failed", error=f"{type(exc).__name__}: {exc}")

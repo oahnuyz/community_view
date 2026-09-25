@@ -117,9 +117,9 @@ async def test_document_titles_always_include_ids(config, store, client, mode):
     check(result)
 
 
-def test_only_search_and_read_tools_with_id_scope():
+def test_only_search_tool_with_id_scope():
     definitions = {tool["function"]["name"]: tool["function"] for tool in tool_definitions()}
-    assert set(definitions) == {"search_chunks", "read_chunks"}
+    assert set(definitions) == {"search_chunks"}
     assert set(definitions["search_chunks"]["parameters"]["properties"]) == {
         "query",
         "search_mode",
@@ -134,7 +134,7 @@ def test_only_search_and_read_tools_with_id_scope():
         assert parser().parse_args(args + ["--doc-ids", "a", "b"]).doc_ids == ["a", "b"]
 
 
-async def test_agent_question_scope_intersects_search_and_restricts_reads(config, store, client):
+async def test_agent_question_scope_intersects_search_and_rejects_reads(config, store, client):
     populate(config, store)
     requests = [
         ("search_chunks", {"query": "alpha beta", "search_mode": "vector", "doc_ids": None}),
@@ -168,8 +168,8 @@ async def test_agent_question_scope_intersects_search_and_restricts_reads(config
     assert {hit["doc_id"] for hit in results[0]["chunks"]} == {"a", "b"}
     assert {hit["doc_id"] for hit in results[1]["chunks"]} == {"b"}
     assert results[2]["chunks"] == []
-    assert "outside" in results[3]["error"]
-    assert {hit["doc_id"] for hit in results[4]["chunks"]} == {"b"}
+    assert results[3] == {"error": "Unknown tool"}
+    assert results[4] == {"error": "Unknown tool"}
     with pytest.raises(ValueError, match="Unknown doc_ids"):
         await agent.ask("alpha", doc_ids=["missing"])
 

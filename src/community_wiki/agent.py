@@ -25,18 +25,11 @@ class SearchArguments(Arguments):
     doc_ids: list[str] | None
 
 
-class ReadArguments(Arguments):
-    doc_id: str
-    ordinals: list[int] = Field(min_length=1)
-
-
 TOOL_ARGUMENTS = {
     "search_chunks": SearchArguments,
-    "read_chunks": ReadArguments,
 }
 TOOL_DESCRIPTIONS = {
     "search_chunks": "Search chunks by vector, keyword or hybrid. Use null for default search_mode. doc_ids limits chunk search to exact document IDs: null searches all documents, [] searches none. Community expansion is unrestricted. Document overviews include both doc_id and title.",
-    "read_chunks": "Read known chunk ordinals from a document to inspect adjacent content. Unknown ordinals return an error.",
 }
 
 
@@ -83,18 +76,14 @@ class Agent:
             raise ValueError(
                 "Repeated identical tool call; refine query or answer with available evidence"
             )
-        if name == "read_chunks" and scope is not None and args["doc_id"] not in scope:
-            raise ValueError("Document is outside the requested doc_ids scope")
         return name, args
 
     async def _run_tools(self, calls, state, counts, scope):
         slots = asyncio.Semaphore(self.config.agent.tool_concurrency)
 
-        async def retrieve(name, args):
+        async def retrieve(args):
             try:
                 async with slots:
-                    if name == "read_chunks":
-                        return self.retriever.read_hits(**args)
                     return await self.retriever.search_hits(**args)
             except (ValueError, TypeError, KeyError) as exc:
                 return {"error": str(exc)}
@@ -104,11 +93,11 @@ class Agent:
         async with asyncio.TaskGroup() as group:
             for call in calls:
                 try:
-                    name, args = self._prepare_tool(call, counts, scope)
+                    _, args = self._prepare_tool(call, counts, scope)
                 except (ValueError, TypeError, KeyError) as exc:
                     pending.append({"error": str(exc)})
                 else:
-                    pending.append(group.create_task(retrieve(name, args)))
+                    pending.append(group.create_task(retrieve(args)))
         messages = []
         # Only this ordered, synchronous pass modifies the shared deduplication state.
         for call, item in zip(calls, pending, strict=True):
@@ -148,7 +137,7 @@ class Agent:
             messages.append(
                 {
                     "role": "system",
-                    "content": f"All chunk searches and reads are restricted to doc_ids: {dumps(sorted(scope))}. Community expansion is unrestricted.",
+                    "content": f"All chunk searches are restricted to doc_ids: {dumps(sorted(scope))}. Community expansion is unrestricted.",
                 }
             )
         state, counts = QuestionState(), Counter()

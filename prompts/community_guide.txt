@@ -1,6 +1,6 @@
 An automatic search has supplied initial_context: potentially related communities and document
 overviews, with the matched chunks withheld. This is a preliminary guide, not a verified answer
 or an exhaustive collection. Use it to identify useful topics and document IDs. For unclear or
-unsupported information, explore further with search_chunks or read_chunks; these tools return
+unsupported information, explore further with search_chunks; this tool returns
 original chunks as usual. If the guide is empty or irrelevant, search more broadly within any
 specified document scope. Do not repeat the initial search merely to obtain the same guide.

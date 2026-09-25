@@ -52,7 +52,7 @@
 .venv/bin/community-wiki --config config.local.yaml inspect run --run-id RUN_ID
 ```
 
-`search`、`ask` 使用 `--doc-ids ID1 ID2` 限定原文 chunk 范围，不再支持 `--title`。`ask` 的范围约束同时适用于搜索和直接读取；Agent 每次搜索可以用 doc_ids 进一步缩小范围。社区扩展仍可包含范围之外的文档。Agent 只有 `search_chunks` 和 `read_chunks` 两个工具；文档 overview 始终同时提供 `doc_id` 和 `title`，可从首次搜索结果获取 ID 后定向检索，也可用 `inspect documents` 查看本地文档 ID。
+`search`、`ask` 使用 `--doc-ids ID1 ID2` 限定原文 chunk 范围，不再支持 `--title`。`ask` 的范围约束适用于搜索；Agent 每次搜索可以用 doc_ids 进一步缩小范围。社区扩展仍可包含范围之外的文档。Agent 仅提供 `search_chunks` 工具；文档 overview 始终同时提供 `doc_id` 和 `title`，可从首次搜索结果获取 ID 后定向检索，也可用 `inspect documents` 查看本地文档 ID。
 
 每次 `ask` 和实验中的每条 QA 都有独立的消息历史与去重记录，单次问题内部保留完整工具历史。不提供交互式聊天。运行记录存于 SQLite，可以检查；当前没有从记录恢复执行的功能。
 

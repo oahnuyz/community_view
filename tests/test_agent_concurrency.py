@@ -74,10 +74,10 @@ async def test_parallel_tools_order_dedup_limits_and_usage(config, store, client
     # Even when the second search completes first, metadata belongs to the first call.
     assert {c["community_id"] for c in results[0]["communities"]} == {"A", "B"}
     assert {d["doc_id"] for d in results[0]["document_overviews"]} == {"a", "b"}
-    for result in results[1:3]:
+    for result in results[1:2]:
         assert result["chunks"]
         assert result["communities"] == [] and result["document_overviews"] == []
-    assert "Unknown doc_id" in results[3]["error"]
+    assert results[2] == results[3] == {"error": "Unknown tool"}
     assert "Repeated identical tool call" in results[4]["error"]
 
 

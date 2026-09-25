@@ -28,6 +28,8 @@ async def test_initial_guide_scope_chunks_dedup_and_usage(config, store, client,
     inputs = []
 
     async def chat(messages, **kwargs):
+        assert [t["function"]["name"] for t in kwargs["tools"]] == ["search_chunks"]
+        assert all("read_chunks" not in m.get("content", "") for m in messages if m["role"] == "system")
         inputs.append(list(messages))
         if len(inputs) == 1:
             guide = [m for m in messages if '"initial_context"' in (m.get("content") or "")]
@@ -49,11 +51,11 @@ async def test_initial_guide_scope_chunks_dedup_and_usage(config, store, client,
                 "content": None,
                 "tool_calls": [
                     {
-                        "id": "read",
+                        "id": "search",
                         "type": "function",
                         "function": {
-                            "name": "read_chunks",
-                            "arguments": json.dumps({"doc_id": "a", "ordinals": [0]}),
+                            "name": "search_chunks",
+                            "arguments": json.dumps({"query": "alpha", "search_mode": "keyword", "doc_ids": ["a"]}),
                         },
                     }
                 ],

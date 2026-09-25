@@ -214,20 +214,6 @@ class Agent:
                 messages.append({"role": "user", "content": dumps(catalog)})
                 self.store.save_run(run_id, self.retriever.mode, "running", messages)
                 record("running")
-            elif self.retriever.mode == "community_guide":
-                context = await self.retriever.search(
-                    question, state, doc_ids=None if scope is None else sorted(scope)
-                )
-                context.pop("chunks", None)
-                messages.append(
-                    {
-                        "role": "system",
-                        "content": self.config.prompts.community_guide.read_text(encoding="utf-8"),
-                    }
-                )
-                messages.append({"role": "user", "content": dumps({"initial_context": context})})
-                self.store.save_run(run_id, self.retriever.mode, "running", messages)
-                record("running")
             for round_index in range(self.config.agent.max_rounds):
                 count_round()
                 last = round_index == self.config.agent.max_rounds - 1

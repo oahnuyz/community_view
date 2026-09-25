@@ -11,8 +11,8 @@ from pathlib import Path
 
 import yaml
 
-from community_wiki.experiments.config import BenchmarkConfig
-from community_wiki.experiments.dataset import write_json
+from community_view.experiments.config import BenchmarkConfig
+from community_view.experiments.dataset import write_json
 
 
 def now():

@@ -4,9 +4,9 @@ import json
 import pytest
 from test_retrieval import populate
 
-from community_wiki.agent import Agent
-from community_wiki.metrics import measure, record_usage
-from community_wiki.retrieval import Retriever
+from community_view.agent import Agent
+from community_view.metrics import measure, record_usage
+from community_view.retrieval import Retriever
 
 
 def tool_call(identity, name="search_chunks", **arguments):

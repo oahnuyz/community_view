@@ -1,13 +1,13 @@
 # 所有相对路径均以本配置文件所在目录为基准。
 # 建议复制为 config.local.yaml 后填写实际服务和模型；两个密钥独立存放在 keys_file。
-# 下列值是首版初始参数，尚未针对实际数据集调优。
+# 下列值为当前仓库默认配置；实际服务和实验路径请在本地副本中填写。
 
 keys_file: api_keys.yaml # 两个 API 密钥的独立 YAML 文件，不会写入实验配置快照中的密钥值。
 
 # 本地存储：无需单独启动数据库服务。
 storage:
-  database: data/community_wiki.sqlite3 # SQLite 文件：文档、chunks、图、社区、调用记录和问答轨迹。
-  log_file: data/community_wiki.log # 运行日志路径；含失败文档及无法继续拆分的社区。
+  database: data/community_view.sqlite3 # SQLite 文件：文档、chunks、图、社区、调用记录和问答轨迹。
+  log_file: data/community_view.log # 运行日志路径；含失败文档及无法继续拆分的社区。
   log_level: INFO # 日志详细程度：DEBUG / INFO / WARNING / ERROR。
 
 # 生成模型：文档 overview、社区描述、Agent 和评分共用此服务。
@@ -84,7 +84,7 @@ community:
 
 # 在线检索：doc_ids 只约束原文 chunk 范围，自动社区扩展不受该范围限制。
 retrieval:
-  mode: naive # naive：chunk+文档概览；community：再扩展社区；community_guide：先搜索并只注入社区和文档概览。
+  mode: naive # naive：chunk+文档概览；community：再扩展社区；fallback 由 community.llm_split_fallback 控制。
   search_mode: vector # 默认 chunk 搜索方式：vector / keyword / hybrid，可被工具参数或 CLI 覆盖。
   chunk_k: 12 # 每次搜索最终返回的 chunk 数量上限。
   doc_k: 3 # 按 chunk 排名首次出现顺序选前 k 个不同文档，用于本体叶社区及最大关联边扩展。
@@ -96,7 +96,7 @@ retrieval:
   bm25_epsilon: 0.25 # BM25Okapi 负 IDF 替换系数，乘以语料的平均 IDF。
   read_chunk_limit: 10 # 底层按编号读取接口的上限（编号从 0 开始）；Agent 不提供此工具。
 
-# 三种检索模式共用 Agent；去重集合覆盖一次用户问题的全部轮次，新问题重置。
+# 两种检索模式共用 Agent；去重集合覆盖一次用户问题的全部轮次，新问题重置。
 agent:
   tool_concurrency: 5 # 单个问题同一轮最多并发执行的工具数；1 为串行，embedding 请求仍受 embedding.concurrency 限制。
   max_rounds: 15 # 单个问题最多模型调用轮数；最后一轮禁止工具调用，只生成最终回答。
@@ -119,7 +119,6 @@ prompts:
   document: prompts/document.txt # 文档逐片累计综合及最后一片生成全文 overview 的指令。
   community: prompts/community.txt # 基于全部覆盖文档 overview 生成社区短名称和总览的指令。
   community_split: prompts/community_split.txt # 仅启用 llm_split_fallback 且 Leiden 无法拆分时使用，不注入 QA 上下文。
-  community_guide: prompts/community_guide.txt # 仅 community_guide 模式注入的初始导览说明。
   agent: prompts/agent.txt # Agent 检索、读取、去重信息使用及回答行为指令。
   question: prompts/question.txt # 每题初始用户 prompt 模板，使用 {question} 插入原始问题。
   judge: prompts/judge.txt # LLM 评分 prompt；评分模型和并发复用问答设置，输出上限采用服务端默认值。

@@ -4,8 +4,8 @@ import json
 import httpx
 import pytest
 
-from community_wiki.llm import ModelClient
-from community_wiki.metrics import measure, record_usage
+from community_view.llm import ModelClient
+from community_view.metrics import measure, record_usage
 
 
 async def test_concurrent_scopes_and_child_tasks_are_isolated():

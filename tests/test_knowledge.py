@@ -6,23 +6,23 @@ from pathlib import Path
 import pytest
 from test_retrieval import populate
 
-from community_wiki.agent import Agent
-from community_wiki.config import Config
-from community_wiki.ingest import embedding_signature
-from community_wiki.knowledge import build_knowledge, validate_plan
-from community_wiki.knowledge_store import (
+from community_view.agent import Agent
+from community_view.config import Config
+from community_view.ingest import embedding_signature
+from community_view.knowledge import build_knowledge, validate_plan
+from community_view.knowledge_store import (
     historical_questions,
     publish_view,
     published_views,
     record_question,
 )
-from community_wiki.knowledge_views import ViewReader
-from community_wiki.models import QuestionState, SearchHit
-from community_wiki.retrieval import Retriever
-from community_wiki.store import Store
+from community_view.knowledge_views import ViewReader
+from community_view.models import QuestionState, SearchHit
+from community_view.retrieval import Retriever
+from community_view.store import Store
 
 
-@pytest.mark.parametrize("mode", ["naive", "community", "community_guide"])
+@pytest.mark.parametrize("mode", ["naive", "community"])
 async def test_disabled_views_keep_original_tools_prompts_and_lazy_graph(
     config, store, client, tmp_path, mode
 ):
@@ -89,7 +89,7 @@ def test_pipeline_resume_rejects_stale_compiled_copy(config, store, client, tmp_
 
 
 async def test_plan_compile_and_view_qa_usage_are_separate(config, store, client):
-    from community_wiki.metrics import measure, record_usage
+    from community_view.metrics import measure, record_usage
 
     populate(config, store)
     retriever = Retriever(config, store, client, "community")
@@ -256,7 +256,7 @@ async def test_per_question_compilation_resume_provenance_and_no_length_limit(
     assert result["metrics"]["compile"]["rounds"] == 3
 
 
-@pytest.mark.parametrize("mode", ["naive", "community", "community_guide"])
+@pytest.mark.parametrize("mode", ["naive", "community"])
 async def test_catalog_then_selective_read_then_search_with_isolated_dedup(
     config, store, client, mode
 ):
@@ -351,7 +351,7 @@ def test_views_never_cross_graph_or_embedding_versions(config, store, client):
     communities = store.communities()
     communities[0].overview = "changed"
     store.publish_graph(store.edges(), communities, store.revision, "test")
-    from community_wiki.knowledge_store import graph_key
+    from community_view.knowledge_store import graph_key
 
     assert not published_views(
         store, graph_key(store.documents(), store.edges(), store.communities())
@@ -378,12 +378,12 @@ async def test_empty_catalog_and_disabled_feature_have_no_answers(config, store,
 async def test_benchmark_view_clone_signature_and_label_isolation(
     config, store, client, text, benchmark_settings, tmp_path
 ):
-    from community_wiki.communities import cluster
-    from community_wiki.experiments.dataset import load_dataset, prepare
-    from community_wiki.experiments.reuse import clone_index
-    from community_wiki.experiments.runner import predict
-    from community_wiki.ingest import ingest
-    from community_wiki.store import Store
+    from community_view.communities import cluster
+    from community_view.experiments.dataset import load_dataset, prepare
+    from community_view.experiments.reuse import clone_index
+    from community_view.experiments.runner import predict
+    from community_view.ingest import ingest
+    from community_view.store import Store
 
     config.knowledge.record_questions = True
     benchmark_settings.modes = ["community"]

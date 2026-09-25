@@ -3,9 +3,9 @@ import asyncio
 import numpy as np
 import pytest
 
-from community_wiki.communities import build_communities, community_links, partition
-from community_wiki.graph import build_edges
-from community_wiki.models import Community, Document, Edge, Overview
+from community_view.communities import build_communities, community_links, partition
+from community_view.graph import build_edges
+from community_view.models import Community, Document, Edge, Overview
 
 
 def doc(identity, vector, keywords):

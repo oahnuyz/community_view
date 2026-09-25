@@ -13,10 +13,10 @@ from pathlib import Path
 
 import yaml
 
-from community_wiki.config import Config
-from community_wiki.experiments.config import BenchmarkConfig
-from community_wiki.experiments.dataset import write_json
-from community_wiki.experiments.reuse import clone_index
+from community_view.config import Config
+from community_view.experiments.config import BenchmarkConfig
+from community_view.experiments.dataset import write_json
+from community_view.experiments.reuse import clone_index
 
 
 def verify_view_snapshot(source, destination):
@@ -115,7 +115,7 @@ def run_pipeline(path):
                     [
                         sys.executable,
                         "-m",
-                        "community_wiki.cli",
+                        "community_view.cli",
                         "--config",
                         str(paths["mapping_config"]),
                         "knowledge",

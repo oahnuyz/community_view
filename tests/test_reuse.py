@@ -3,11 +3,11 @@ import shutil
 
 import pytest
 
-from community_wiki.communities import cluster
-from community_wiki.experiments.dataset import load_dataset
-from community_wiki.experiments.reuse import clone_index
-from community_wiki.ingest import ingest
-from community_wiki.store import Store
+from community_view.communities import cluster
+from community_view.experiments.dataset import load_dataset
+from community_view.experiments.reuse import clone_index
+from community_view.ingest import ingest
+from community_view.store import Store
 
 
 async def test_reuse_preserves_source_and_vectors(

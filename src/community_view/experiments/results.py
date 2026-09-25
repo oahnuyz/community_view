@@ -3,6 +3,8 @@
 from ..store import dumps
 from .dataset import read_jsonl, write_json
 
+QA_METRICS_POLICY = "successful_attempt_v1"
+
 
 def load_results(settings):
     return {
@@ -15,6 +17,8 @@ def summarize(questions, modes, latest):
     for mode in modes:
         rows = [latest[(mode, q["id"])] for q in questions if (mode, q["id"]) in latest]
         count = len(rows)
+        successful = [r for r in rows if r["status"] == "complete"]
+        success_count = len(successful)
         scored = [
             r["evaluation"] for r in rows if r.get("evaluation", {}).get("status") == "complete"
         ]
@@ -22,14 +26,16 @@ def summarize(questions, modes, latest):
         accuracy = sum(r["score"] for r in scored) / len(scored) if scored else None
         summary["modes"][mode] = {
             "completed_qa_count": count,
-            "successful": sum(row["status"] == "complete" for row in rows),
+            "successful": success_count,
             "failed": sum(row["status"] == "failed" for row in rows),
-            "mean_elapsed_seconds": sum(r["elapsed_seconds"] for r in rows) / count
-            if count
+            "mean_elapsed_seconds": sum(r["elapsed_seconds"] for r in successful) / success_count
+            if success_count
             else None,
-            "mean_total_tokens": sum(r["total_tokens"] for r in rows) / count if count else None,
-            "mean_rounds": sum(r["rounds"] for r in rows) / count if count else None,
-            "total_tokens": sum(r["total_tokens"] for r in rows),
+            "mean_total_tokens": sum(r["total_tokens"] for r in successful) / success_count
+            if success_count else None,
+            "mean_rounds": sum(r["rounds"] for r in successful) / success_count
+            if success_count else None,
+            "total_tokens": sum(r["total_tokens"] for r in successful),
             "evaluation": {
                 "scored": len(scored),
                 "total": len(questions),

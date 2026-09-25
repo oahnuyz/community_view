@@ -6,9 +6,9 @@ import subprocess
 import sys
 from datetime import datetime
 
-from community_wiki.experiments.config import BenchmarkConfig
-from community_wiki.experiments.dataset import load_dataset, write_json
-from community_wiki.experiments.results import load_results, summarize
+from community_view.experiments.config import BenchmarkConfig
+from community_view.experiments.dataset import load_dataset, write_json
+from community_view.experiments.results import load_results, summarize
 
 
 def main():
@@ -39,7 +39,7 @@ def main():
                     [
                         sys.executable,
                         "-m",
-                        "community_wiki.cli",
+                        "community_view.cli",
                         "--config",
                         args.config,
                         "benchmark",

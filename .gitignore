@@ -6,6 +6,8 @@ __pycache__/
 data/
 .env
 config.local.yaml
+config.*.local.yaml
+benchmark*.local.yaml
 dist/
 api_keys.yaml
 docs/reports/

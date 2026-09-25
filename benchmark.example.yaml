@@ -1,0 +1,9 @@
+# 所有路径相对本文件；复制为 benchmark.local.yaml 后修改。
+dataset_dir: data/benchmarks/my_dataset # prepared 数据集，含 qa/documents JSONL 和原文。
+output_dir: data/runs/my_dataset_baseline # 新实验独立目录，不覆盖历史结果。
+database: data/runs/my_dataset_baseline/index.sqlite3 # 本数据集独立索引。
+log_file: data/runs/my_dataset_baseline/run.log # API 重试、缺失 usage 和失败日志。
+start: 0 # 按 qa.jsonl 顺序选取，从 0 开始。
+count: null # null 表示从 start 到末尾；指定整数时必须有足够题数。
+modes: [naive, community] # 两种检索共用这份索引；community_fallback 需另设 fallback 配置/索引。
+concurrency: 5 # 同一阶段所有 modes 合计的 QA/评测并发上限。

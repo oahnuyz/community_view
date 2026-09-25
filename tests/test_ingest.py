@@ -1,8 +1,8 @@
 import pytest
 
-from community_wiki.ingest import ingest
-from community_wiki.overviews import document_overview
-from community_wiki.retrieval import Retriever
+from community_view.ingest import ingest
+from community_view.overviews import document_overview
+from community_view.retrieval import Retriever
 
 
 def test_unicode_lossless_windows(text):
@@ -74,7 +74,7 @@ async def test_empty_file_explicit_error(config, store, client, text, tmp_path):
 
 
 async def test_prompts_render_configured_length_limits(config, text, client):
-    from community_wiki.overviews import describe_community
+    from community_view.overviews import describe_community
 
     config.overview.summary_max_chars = 321
     config.community.overview_max_chars = 234

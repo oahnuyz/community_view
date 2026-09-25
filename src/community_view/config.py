@@ -137,8 +137,7 @@ class CommunityConfig(Section):
         return self
 
 
-RetrievalMode = Literal["naive", "community", "community_guide"]
-COMMUNITY_MODES = ("community", "community_guide")
+RetrievalMode = Literal["naive", "community"]
 
 
 class RetrievalConfig(Section):
@@ -167,7 +166,6 @@ class PromptConfig(Section):
     agent: Path
     question: Path
     judge: Path
-    community_guide: Path = Path("prompts/community_guide.txt")
     community_split: Path = Path("prompts/community_split.txt")
 
 
@@ -212,7 +210,6 @@ class Config(Section):
                     "agent",
                     "question",
                     "judge",
-                    "community_guide",
                     "community_split",
                 ),
             ),

@@ -1,10 +1,10 @@
 import pytest
 
-from community_wiki.config import PDFConfig
-from community_wiki.ingest import ingestion_signature
-from community_wiki.overviews import object_schema, string_schema, validate_object
-from community_wiki.pdf import PDFParser, clean_unicode, markdown_table
-from community_wiki.text import read_document
+from community_view.config import PDFConfig
+from community_view.ingest import ingestion_signature
+from community_view.overviews import object_schema, string_schema, validate_object
+from community_view.pdf import PDFParser, clean_unicode, markdown_table
+from community_view.text import read_document
 
 
 def make_pdf(path, *, outlines=False, blank=False):

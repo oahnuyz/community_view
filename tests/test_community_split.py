@@ -6,11 +6,11 @@ import httpx
 import pytest
 from test_graph import doc
 
-from community_wiki.communities import build_communities, graph_signature
-from community_wiki.community_split import validate_partition
-from community_wiki.ingest import digest, ingest
-from community_wiki.llm import ModelClient
-from community_wiki.store import dumps
+from community_view.communities import build_communities, graph_signature
+from community_view.community_split import validate_partition
+from community_view.ingest import digest, ingest
+from community_view.llm import ModelClient
+from community_view.store import dumps
 
 
 @pytest.mark.parametrize(
@@ -132,9 +132,9 @@ async def test_leiden_success_or_invalid_partition_does_not_trigger_fallback(
 async def test_fallback_http_retry_retention_and_indexing_metrics(
     config, store, client, text, benchmark_settings, monkeypatch, caplog, outcome
 ):
-    import community_wiki.communities as module
-    from community_wiki.experiments.dataset import load_dataset, prepare
-    from community_wiki.experiments.indexing import index
+    import community_view.communities as module
+    from community_view.experiments.dataset import load_dataset, prepare
+    from community_view.experiments.indexing import index
 
     config.community.llm_split_fallback = True
     config.community.max_documents = 1

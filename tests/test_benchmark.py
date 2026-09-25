@@ -1,15 +1,16 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
-from community_wiki.experiments import (
+from community_view.experiments import (
     load_dataset,
     predict,
     prepare,
     read_jsonl,
     verify_index,
 )
-from community_wiki.ingest import ingest
+from community_view.ingest import ingest
 
 
 def test_benchmark_file_order_checksums_and_separate_references(benchmark_settings):
@@ -77,11 +78,85 @@ async def test_benchmark_retries_only_failed_questions(
     assert len(read_jsonl(benchmark_settings.output_dir / "results.jsonl")) == 2
 
 
+async def test_failed_qa_costs_are_discarded_on_each_retry(
+    benchmark_settings, config, store, client, text, monkeypatch
+):
+    from community_view.experiments import runner
+    from community_view.metrics import record_usage
+
+    benchmark_settings.count = 1
+    dataset = load_dataset(benchmark_settings)
+    prepare(benchmark_settings, dataset)
+    await ingest(dataset.paths, config, store, client, text)
+    ticks = iter([0, 20, 30, 60, 70, 73])
+    monkeypatch.setattr(runner, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+
+    async def fail(*args, **kwargs):
+        record_usage({"prompt_tokens": 900, "completion_tokens": 30}, "agent")
+        record_usage({"total_tokens": 99}, "embedding")
+        raise RuntimeError("Failed after consuming tokens")
+
+    client.chat = fail
+    for _ in range(2):
+        summary = await predict(dataset, benchmark_settings, config, store, client)
+        mode = summary["modes"]["naive"]
+        assert mode["failed"] == 1 and mode["successful"] == 0
+        assert mode["total_tokens"] == 0
+        assert all(mode[k] is None for k in [
+            "mean_total_tokens", "mean_rounds", "mean_elapsed_seconds"
+        ])
+        row = read_jsonl(benchmark_settings.output_dir / "results.jsonl")[0]
+        assert all(row[k] is None for k in [
+            "llm_input_tokens", "llm_output_tokens", "llm_total_tokens", "embedding_tokens",
+            "total_tokens", "rounds", "elapsed_seconds",
+        ])
+        assert "Failed after consuming tokens" in row["error"]
+
+    async def success(*args, **kwargs):
+        record_usage({"prompt_tokens": 20, "completion_tokens": 3}, "agent")
+        record_usage({"total_tokens": 7}, "embedding")
+        return {"role": "assistant", "content": "Successful answer"}
+
+    client.chat = success
+    summary = await predict(dataset, benchmark_settings, config, store, client)
+    row = read_jsonl(benchmark_settings.output_dir / "results.jsonl")[0]
+    assert row["status"] == "complete" and "error" not in row
+    assert row["total_tokens"] == 30 and row["embedding_tokens"] == 7
+    assert row["llm_input_tokens"] == 20 and row["llm_output_tokens"] == 3
+    assert row["elapsed_seconds"] == 3 and row["rounds"] == 1
+    assert len(row["prior_attempts"]) == 2
+    for attempt in row["prior_attempts"]:
+        assert set(attempt) == {"run_id", "status", "trace_file"}
+        assert (benchmark_settings.output_dir / attempt["trace_file"]).exists()
+    mode = summary["modes"]["naive"]
+    assert mode["mean_total_tokens"] == 30 and mode["total_tokens"] == 30
+    assert mode["mean_elapsed_seconds"] == 3 and mode["mean_rounds"] == 1
+    # Successful rows are reused; no new attempt or timer tick is needed.
+    client.chat = fail
+    assert await predict(dataset, benchmark_settings, config, store, client) == summary
+
+
+@pytest.mark.parametrize("failed_cost", [None, 999999])
+def test_qa_summary_excludes_failed_rows(failed_cost):
+    from community_view.experiments.results import summarize
+
+    latest = {
+        ("naive", "ok"): {"status": "complete", "total_tokens": 40,
+                          "elapsed_seconds": 6, "rounds": 2},
+        ("naive", "bad"): {"status": "failed", "total_tokens": failed_cost,
+                           "elapsed_seconds": failed_cost, "rounds": failed_cost},
+    }
+    row = summarize([{"id": "ok"}, {"id": "bad"}], ["naive"], latest)["modes"]["naive"]
+    assert row["successful"] == row["failed"] == 1
+    assert row["mean_total_tokens"] == row["total_tokens"] == 40
+    assert row["mean_elapsed_seconds"] == 6 and row["mean_rounds"] == 2
+
+
 async def test_indexing_and_per_qa_totals_trace_and_prompt(
     benchmark_settings, config, store, client, text
 ):
-    from community_wiki.experiments.runner import index
-    from community_wiki.metrics import record_usage
+    from community_view.experiments.runner import index
+    from community_view.metrics import record_usage
 
     dataset = load_dataset(benchmark_settings)
     prepare(benchmark_settings, dataset)
@@ -138,7 +213,7 @@ def test_all_questions_option(benchmark_settings):
 
 
 async def test_separate_ingest_and_cluster_stages(benchmark_settings, config, store, client, text):
-    from community_wiki.experiments.indexing import index
+    from community_view.experiments.indexing import index
 
     benchmark_settings.modes = ["community"]
     dataset = load_dataset(benchmark_settings)
@@ -162,7 +237,7 @@ async def test_separate_ingest_and_cluster_stages(benchmark_settings, config, st
 
 
 async def test_all_stage_runs_qa_then_judge(benchmark_settings, config, client, monkeypatch):
-    import community_wiki.experiments.runner as runner
+    import community_view.experiments.runner as runner
 
     original = client.json_completion
     judged = []

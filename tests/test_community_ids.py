@@ -1,5 +1,5 @@
-from community_wiki.community_ids import remap_community_links, shorten_community_ids
-from community_wiki.models import Community
+from community_view.community_ids import remap_community_links, shorten_community_ids
+from community_view.models import Community
 
 
 def test_ids_deterministic_persistent_and_preserve_hierarchy(store):

@@ -1,4 +1,4 @@
-from community_wiki.agent import Agent
+from community_view.agent import Agent
 
 
 async def test_agent_prompt_limits_follow_configuration(config, store, client, tmp_path):

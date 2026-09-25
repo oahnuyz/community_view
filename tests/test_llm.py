@@ -4,9 +4,9 @@ import httpx
 import numpy as np
 import pytest
 
-from community_wiki.llm import ModelClient
-from community_wiki.metrics import measure
-from community_wiki.overviews import (
+from community_view.llm import ModelClient
+from community_view.metrics import measure
+from community_view.overviews import (
     describe_community,
     document_overview,
     object_schema,

@@ -10,7 +10,6 @@ from dataclasses import asdict
 
 from ..agent import Agent
 from ..communities import graph_signature
-from ..config import COMMUNITY_MODES
 from ..credentials import Credentials
 from ..ingest import digest
 from ..knowledge_store import graph_key, published_views
@@ -22,16 +21,14 @@ from ..text import TextProcessor
 from .dataset import load_dataset, prepare, verify_index, write_json
 from .indexing import index
 from .judge import evaluate
-from .results import load_results, save_results, summarize
+from .results import QA_METRICS_POLICY, load_results, save_results, summarize
 
 log = logging.getLogger(__name__)
 
 
 async def predict(dataset, settings, config, store, client):
     verify_index(dataset, config, store, complete=True)
-    if any(mode in COMMUNITY_MODES for mode in settings.modes) and store.meta(
-        "graph_signature"
-    ) != graph_signature(config):
+    if "community" in settings.modes and store.meta("graph_signature") != graph_signature(config):
         raise ValueError("Community settings changed; run benchmark --stage index")
     signature = digest(
         dumps(
@@ -45,6 +42,7 @@ async def predict(dataset, settings, config, store, client):
                     and (key != "community_split" or config.community.llm_split_fallback)
                 },
                 "qa_concurrency": settings.concurrency,
+                "qa_metrics_policy": QA_METRICS_POLICY,
                 "revision": store.revision,
                 "communities": [asdict(c) for c in store.communities()],
                 "compiled_views": published_views(
@@ -74,6 +72,7 @@ async def predict(dataset, settings, config, store, client):
                 "config": config.model_dump(mode="json", exclude={"prompts": {"judge"}}),
                 "dataset_signature": dataset.manifest["dataset_signature"],
                 "qa_concurrency": settings.concurrency,
+                "qa_metrics_policy": QA_METRICS_POLICY,
             },
         )
     latest = load_results(settings)
@@ -129,18 +128,19 @@ async def predict(dataset, settings, config, store, client):
                     result["trace_file"] = str(trace_path.relative_to(settings.output_dir))
             result.update(totals.as_dict())
             result["elapsed_seconds"] = time.monotonic() - started
-            # Rerun failed QA: accumulate actual work across attempts, excluding time between runs.
+            # Failed attempts remain traceable, but only successful-attempt metrics are retained.
+            if result["status"] != "complete":
+                for field in (*totals.as_dict(), "elapsed_seconds"):
+                    result[field] = None
             if previous:
                 result["prior_attempts"] = [
                     *previous.get("prior_attempts", []),
                     {k: previous[k] for k in ("run_id", "status", "trace_file")},
                 ]
-                for field in (*totals.as_dict(), "elapsed_seconds"):
-                    result[field] += previous[field]
             latest[key] = result
             save_results(dataset, settings, latest)
             log.info(
-                "QA %s mode=%s id=%s elapsed=%.3fs tokens=%s rounds=%s",
+                "QA %s mode=%s id=%s elapsed=%s tokens=%s rounds=%s",
                 result["status"],
                 mode,
                 question["id"],

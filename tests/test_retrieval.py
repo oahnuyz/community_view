@@ -3,11 +3,13 @@ import json
 import numpy as np
 import pytest
 
-from community_wiki.agent import Agent, SearchArguments, tool_definitions
-from community_wiki.cli import parser
-from community_wiki.communities import cluster
-from community_wiki.ingest import embedding_signature, ingest
-from community_wiki.models import (
+from community_view.agent import Agent, SearchArguments, tool_definitions
+from community_view.cli import parser
+from community_view.communities import cluster
+from community_view.config import Config
+from community_view.experiments.config import BenchmarkConfig
+from community_view.ingest import embedding_signature, ingest
+from community_view.models import (
     Chunk,
     Community,
     Document,
@@ -16,7 +18,7 @@ from community_wiki.models import (
     QuestionState,
     SearchHit,
 )
-from community_wiki.retrieval import Retriever
+from community_view.retrieval import Retriever
 
 
 def populate(config, store):
@@ -96,7 +98,7 @@ async def test_doc_ids_scope_chunks_but_not_expansion(config, store, client, mod
         await retriever.search("alpha", QuestionState(), doc_ids=["a", "missing"], search_mode=mode)
 
 
-@pytest.mark.parametrize("mode", ["naive", "community", "community_guide"])
+@pytest.mark.parametrize("mode", ["naive", "community"])
 async def test_document_titles_always_include_ids(config, store, client, mode):
     populate(config, store)
     retriever = Retriever(config, store, client, mode)
@@ -132,6 +134,28 @@ def test_only_search_tool_with_id_scope():
     for command in ("search", "ask"):
         args = [command, "alpha"]
         assert parser().parse_args(args + ["--doc-ids", "a", "b"]).doc_ids == ["a", "b"]
+
+
+@pytest.mark.parametrize("mode", ["community_guide", "community_fallback"])
+def test_unsupported_modes_rejected_in_all_entry_points(config, benchmark_settings, mode):
+    for command in ["ask", "search"]:
+        with pytest.raises(SystemExit):
+            parser().parse_args([command, "question", "--mode", mode])
+    values = config.model_dump()
+    values["retrieval"]["mode"] = mode
+    with pytest.raises(ValueError):
+        Config.model_validate(values)
+    values = benchmark_settings.model_dump()
+    values["modes"] = [mode]
+    with pytest.raises(ValueError):
+        BenchmarkConfig.model_validate(values)
+
+
+def test_removed_prompt_configuration_rejected(config):
+    values = config.model_dump()
+    values["prompts"]["community_guide"] = "unused.txt"
+    with pytest.raises(ValueError):
+        Config.model_validate(values)
 
 
 async def test_agent_question_scope_intersects_search_and_rejects_reads(config, store, client):

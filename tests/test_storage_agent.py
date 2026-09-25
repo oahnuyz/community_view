@@ -4,11 +4,11 @@ from dataclasses import replace
 import pytest
 from test_retrieval import populate
 
-from community_wiki.agent import Agent
-from community_wiki.communities import cluster
-from community_wiki.ingest import embedding_signature
-from community_wiki.retrieval import Retriever
-from community_wiki.store import Store
+from community_view.agent import Agent
+from community_view.communities import cluster
+from community_view.ingest import embedding_signature
+from community_view.retrieval import Retriever
+from community_view.store import Store
 
 
 def test_snapshot_revision_guard_and_rollback(config, store):

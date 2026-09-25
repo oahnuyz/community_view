@@ -1,8 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
 
-from community_wiki.experiments import load_dataset, verify_index
-from community_wiki.ingest import digest, ingest
-from community_wiki.store import Store
+from community_view.experiments import load_dataset, verify_index
+from community_view.ingest import digest, ingest
+from community_view.store import Store
 
 
 async def test_ids_follow_source_order_and_survive_retry_update_restart(

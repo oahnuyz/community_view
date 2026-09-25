@@ -6,10 +6,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from community_wiki.config import Config
-from community_wiki.experiments import BenchmarkConfig
-from community_wiki.store import Store
-from community_wiki.text import TextProcessor
+from community_view.config import Config
+from community_view.experiments import BenchmarkConfig
+from community_view.store import Store
+from community_view.text import TextProcessor
 
 ROOT = Path(__file__).resolve().parents[1]
 

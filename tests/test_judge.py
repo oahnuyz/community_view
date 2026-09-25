@@ -5,10 +5,10 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from community_wiki.experiments import load_dataset, prepare, read_jsonl
-from community_wiki.experiments.judge import Rating, evaluate, render_prompt
-from community_wiki.llm import ModelClient
-from community_wiki.metrics import record_usage
+from community_view.experiments import load_dataset, prepare, read_jsonl
+from community_view.experiments.judge import Rating, evaluate, render_prompt
+from community_view.llm import ModelClient
+from community_view.metrics import record_usage
 
 
 def seed_answers(settings):
@@ -129,7 +129,7 @@ def test_prompt_is_single_pass_and_gold_joined_by_pipe(config):
 async def test_judge_stage_needs_no_index_or_embedding_key(
     benchmark_settings, config, client, monkeypatch
 ):
-    import community_wiki.experiments.runner as runner
+    import community_view.experiments.runner as runner
 
     seed_answers(benchmark_settings)
     config.keys_file.write_text('chat_api_key: test\nembedding_api_key: ""\n')

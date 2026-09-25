@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "community-wiki"
+name = "community-view"
 version = "0.1.0"
 description = "Document communities and agentic retrieval"
 requires-python = ">=3.12"
@@ -18,10 +18,10 @@ dependencies = [
 dev = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2", "ruff>=0.11,<1"]
 
 [project.scripts]
-community-wiki = "community_wiki.cli:main"
+community-view = "community_view.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/community_wiki"]
+packages = ["src/community_view"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

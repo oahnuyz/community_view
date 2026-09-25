@@ -4,7 +4,6 @@ import json
 import time
 
 from ..communities import cluster, graph_signature
-from ..config import COMMUNITY_MODES
 from ..ingest import ingest
 from ..metrics import measure
 from .dataset import verify_index, write_json
@@ -30,9 +29,7 @@ async def index(dataset, settings, config, store, client, text, stage="index"):
         )
     stages = previous.get("stages", {})
     required = ["documents"] if stage in {"ingest", "index"} else []
-    if stage == "cluster" or (
-        stage == "index" and any(mode in COMMUNITY_MODES for mode in settings.modes)
-    ):
+    if stage == "cluster" or (stage == "index" and "community" in settings.modes):
         required.append("communities")
 
     def save():

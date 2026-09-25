@@ -1,0 +1,5 @@
+# 复制为 api_keys.yaml 后填写真实密钥；api_keys.yaml 已被 Git 忽略。
+# 生成模型（文档/社区描述、Agent、提炼、编译、judge）共用 chat_api_key。
+chat_api_key: "replace-with-your-chat-api-key"
+# 原文、文档 overview、查询和提炼问题的向量生成使用 embedding_api_key。
+embedding_api_key: "replace-with-your-embedding-api-key"

@@ -21,6 +21,9 @@ def config(tmp_path):
     config.keys_file.write_text('chat_api_key: "test-only"\nembedding_api_key: "test-embedding"\n')
     config.storage.database = tmp_path / "index.sqlite3"
     config.storage.log_file = tmp_path / "test.log"
+    # Keep mocked API routes independent of runtime endpoints.
+    config.model.base_url = "https://mock.invalid/v1"
+    config.embedding.base_url = "https://mock.invalid/v1"
     config.embedding.dimensions = None
     config.embedding.api_format = "openai"
     config.graph.min_weight = 0.0

@@ -1,0 +1,3 @@
+Using the community and its member document overviews, keep historical questions that are fully or partly relevant and discard entirely unrelated questions.
+Only select question IDs. Do not rewrite, shorten, merge, or answer questions.
+Return JSON with keep_question_ids listing the retained source_question_ids; return an empty list if none are relevant.

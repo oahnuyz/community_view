@@ -113,34 +113,49 @@ def published_views(store, key):
 def publish_view(store, job, view):
     # One complete view per community. A failed replacement cannot destroy prior knowledge.
     with store.db:
+        _publish_view(store, job, view)
+
+
+def replace_views(store, key, entries):
+    """Publish one workload atomically, removing stale views of the same graph only."""
+    with store.db:
+        store.db.execute("DELETE FROM knowledge_answers WHERE graph_key=?", (key,))
+        store.db.execute("DELETE FROM knowledge_views WHERE graph_key=?", (key,))
+        for job, view in entries:
+            if job["graph_key"] != key:
+                raise ValueError("View graph differs from the publication graph")
+            _publish_view(store, job, view)
+
+
+def _publish_view(store, job, view):
+    store.db.execute(
+        "DELETE FROM knowledge_answers WHERE graph_key=? AND community_id=?",
+        (job["graph_key"], job["community_id"]),
+    )
+    store.db.execute(
+        "INSERT OR REPLACE INTO knowledge_views VALUES (?,?,?,?)",
+        (
+            job["graph_key"],
+            job["community_id"],
+            job["signature"],
+            encoded({k: v for k, v in view.items() if k not in {"entries", "vectors"}}),
+        ),
+    )
+    for ordinal, entry in enumerate(view["entries"], 1):
         store.db.execute(
-            "DELETE FROM knowledge_answers WHERE graph_key=? AND community_id=?",
-            (job["graph_key"], job["community_id"]),
-        )
-        store.db.execute(
-            "INSERT OR REPLACE INTO knowledge_views VALUES (?,?,?,?)",
+            "INSERT INTO knowledge_answers VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 job["graph_key"],
+                entry["question_id"],
                 job["community_id"],
                 job["signature"],
-                encoded({k: v for k, v in view.items() if k not in {"entries", "vectors"}}),
+                ordinal,
+                entry["question"],
+                entry["answer"],
+                encoded(entry["source_questions"]),
+                encoded(view["vectors"][entry["question_id"]]),
             ),
         )
-        for ordinal, entry in enumerate(view["entries"], 1):
-            store.db.execute(
-                "INSERT INTO knowledge_answers VALUES (?,?,?,?,?,?,?,?,?)",
-                (
-                    job["graph_key"],
-                    entry["question_id"],
-                    job["community_id"],
-                    job["signature"],
-                    ordinal,
-                    entry["question"],
-                    entry["answer"],
-                    encoded(entry["source_questions"]),
-                    encoded(view["vectors"][entry["question_id"]]),
-                ),
-            )
 
 
 def load_job(store, signature, identity):

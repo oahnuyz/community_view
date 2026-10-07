@@ -1,4 +1,7 @@
-Using the community and its member document overviews, keep only relevant historical questions.
-Shorten verbose questions without changing their meaning, and merge duplicates.
+Questions fall into three categories by their relevance to the community: fully relevant, partly relevant, and unrelated.
+Using the community and its member document overviews, keep only relevant historical questions and discard entirely unrelated questions.
+Preserve the original wording whenever possible, especially names, dates, and qualifiers; do not rewrite or drop them.
+Only when a question is partly relevant, remove unrelated subquestions and retain the part supported by the community's actual content; do not change entities or conditions to make an unrelated question fit.
+Deduplicate questions with the same actual meaning; do not merge distinct questions merely because they concern similar topics.
 Return JSON with questions; each item contains question and source_question_ids listing all original questions it represents.
 Do not answer questions. Return an empty questions list if none are relevant.

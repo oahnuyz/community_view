@@ -13,7 +13,7 @@ storage:
 # 生成模型：文档 overview、社区描述、Agent 和评分共用此服务。
 # 请求不传 max_tokens / max_completion_tokens，输入窗口与输出 token 上限采用 API 服务端默认值。
 model:
-  base_url: http://127.0.0.1:18080/v1 # OpenAI-compatible 服务根地址；程序追加 /chat/completions。
+  base_url: https://ark.cn-beijing.volces.com/api/plan/v3 # OpenAI-compatible 服务根地址；程序追加 /chat/completions。
   chat_model: deepseek-v4-flash # 服务中的模型名称；需支持原生工具调用和结构化 JSON 输出。
   timeout_seconds: 300 # HTTP 请求超时秒数；生成和 embedding 请求共用。
   concurrency: 5 # 所有生成请求共享的最大并发数；文档与社区还有各自并发限制。
@@ -27,7 +27,7 @@ model:
 # 不在本地检查 embedding 输入 token 上限，由 API 服务端处理。
 embedding:
   api_format: multimodal # openai：字符串批量输入；multimodal：逐条文本对象输入、单向量返回（当前代理的豆包视觉向量接口）。
-  base_url: http://127.0.0.1:18080/v1 # embedding 服务根地址；程序追加 /embeddings，可与生成服务不同。
+  base_url: https://ark.cn-beijing.volces.com/api/plan/v3 # embedding 服务根地址；程序追加 /embeddings，可与生成服务不同。
   model: doubao-embedding-vision # embedding 模型名称；更换模型/地址/维数后需用新数据库重建。
   dimensions: 1024 # null 使用模型原生维数；仅在服务支持 dimensions 参数时填写正整数。
   batch_size: 32 # openai 格式单次请求的文本条数；multimodal 每条文本独立请求，不使用该值。
@@ -102,16 +102,18 @@ agent:
   max_rounds: 15 # 单个问题最多模型调用轮数；最后一轮禁止工具调用，只生成最终回答。
   max_identical_tool_calls: 2 # 同一次问题中，相同工具和参数最多执行次数；超过后返回工具错误。
 
-# 可选问题视图：记录历史、提炼问题、逐题编译和按需读取。
+# 可选问题视图：主线为筛选历史问题并复用原答案；保留旧重编译入口。
 knowledge:
   record_questions: false # 独立开关：记录外部问题与实际展示过的叶社区；编译内部问题不进入历史。
-  use_compiled: false # 独立开关：匹配提炼问题、展示view问题目录并允许读取答案；关闭时无新知识说明或工具。
-  concurrency: 3 # 不同社区的提炼、编译并发上限；每个社区内逐题运行独立agent loop。
-  question_k: 5 # 向量匹配的前k个提炼问题；取其所属社区，展示社区view中的完整问题目录。
-  min_question_similarity: 0.0 # 问题向量余弦最低阈值；零或负相似度始终排除。
+  use_compiled: false # 匹配 view 问题并提供目录；首轮仅可读 view，第二轮起允许 search；关闭时普通问答不变。
+  concurrency: 3 # 不同社区的问题筛选并发；旧提炼/编译入口也使用此上限。
+  question_k: 3 # 匹配前 k 个 view 问题，按所属社区去重，展示这些社区的完整问题目录。
+  min_question_similarity: 0.2 # 问题向量余弦最低阈值；零或负相似度始终排除。
   read_answer_limit: 8 # read_view_answers一次最多选择的答案数，跨调用按问题独立去重。
   validation_retries: 2 # 非法问题集（如重复问题、未知来源ID）带错误反馈的最大修正次数。
-  plan_prompt: prompts/knowledge_plan.txt # 根据社区及成员文档信息筛选、压缩、去重历史问题。
+  history_results: null # knowledge-filter 必填：单个成功 community 实验的 results.jsonl；不读取 gold/评分。
+  filter_prompt: prompts/knowledge_filter.txt # 只筛掉完全无关的问题，不改写问题、不重新生成答案。
+  plan_prompt: prompts/knowledge_plan.txt # 根据社区及成员文档信息筛选相关问题、保留原表述和限定词，并按实际语义去重。
   context_prompt: prompts/knowledge_context.txt # 只向启用新知识的问答说明view目录及答案读取工具。
 
 # 可单独编辑的指令模板，路径相对本 YAML 文件。

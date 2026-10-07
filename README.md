@@ -1,6 +1,6 @@
 # community_view
 
-以整篇文档为图节点的 RAG 系统。先生成文档 overview、原文切片和向量，再对文档图进行层次社区聚类。问答使用 Agent loop，通过原文搜索和社区信息逐步获取证据；可选地把历史问题编译成社区问答 view，供后续按需读取。
+以整篇文档为图节点的 RAG 系统。先生成文档 overview、原文切片和向量，再对文档图进行层次社区聚类。问答使用 Agent loop，通过原文搜索和社区信息逐步获取证据；可选地筛选历史问题并复用其实际答案，生成社区问答 view，供后续按需读取。
 
 项目使用 Python 3.12+、SQLite、本地精确向量检索、BM25、Leiden 和兼容 Chat Completions 的模型服务，无需单独部署向量数据库。生成、embedding 和 judge 均调用外部 API。
 
@@ -11,7 +11,7 @@
 3. **建图**：用文档向量、关键词或混合相似度寻找近邻，保存通过候选筛选和权重阈值的全部文档边。
 4. **社区构建**：在全图运行 Leiden，超过 `max_documents` 的社区继续在诱导子图中尝试拆分。所有社区保存层次、父子关系、成员文档及 LLM 生成的 name/overview；当前 main 的检索只使用叶社区。
 5. **Agent 问答**：每题拥有独立消息历史和去重状态。普通问答仅提供 `search_chunks`，可按 `doc_ids` 定向搜索正文。同一轮独立工具调用可并发执行。
-6. **可选知识编译**：记录历史问题展示过的叶社区，筛选、压缩、去重相关问题，逐题运行 Agent 生成答案。后续问答先匹配问题目录，再通过 `read_view_answers` 读取选定答案。
+6. **可选历史答案 view**：记录成功问答展示过的叶社区，逐社区筛掉完全无关的问题，原样保留剩余问题及其实际回答，不重新编译答案。新问答先匹配问题目录，首轮只提供 read_view_answers，第二轮起恢复 search_chunks。
 7. **评测**：独立的 LLM-as-judge 阶段对照 gold answer 打 0–4 分，保存逐题理由和归一化均值。
 
 PDF 使用本地 `pdfplumber`，逐页提取正文、书签/字号标题和 Markdown 表格，保留页码标记；没有自动 OCR 或 VLM。没有可提取内容的 PDF 会失败。社区 overview 是基于成员文档 overview 的短描述，不是全文社区报告；当前没有 wiki 模式、父社区召回、交互式 chat 或历史上下文压缩。
@@ -138,7 +138,7 @@ knowledge:
 
 | 项目 | 当前默认值 |
 |---|---|
-| 生成 API / 模型 | `http://127.0.0.1:18080/v1` / `deepseek-v4-flash` |
+| 生成 API / 模型 | `https://ark.cn-beijing.volces.com/api/plan/v3` / `deepseek-v4-flash` |
 | embedding API / 模型 | 同一根地址 / `doubao-embedding-vision` |
 | embedding 协议 / 维数 | `multimodal` / `1024`；标准文本接口可改为 `openai` |
 | API 超时 / 失败额外重试 | 300 秒 / 2 次 |
@@ -153,7 +153,7 @@ knowledge:
 | 混合搜索 | 两路各取至少 40 个候选，经 RRF 融合；`rrf_constant=60` |
 | Agent | 最多 15 轮；相同工具与参数最多调用 2 次 |
 | 知识功能 | `record_questions=false`，`use_compiled=false` |
-| view 匹配 / 读取 | `question_k=5`，`min_question_similarity=0.0`，一次最多读取 8 个答案 |
+| view 匹配 / 读取 | `question_k=3`，`min_question_similarity=0.2`，一次最多读取 8 个答案 |
 
 生成请求不发送 `max_tokens` / `max_completion_tokens`，采用服务端默认窗口和输出上限；文档分片和摘要字符限制仍然生效。字符数包含空格、标点，不是词数或 token 数。当前回答 prompt 仍包含 `as briefly as possible`。
 
@@ -169,7 +169,7 @@ knowledge:
 | `community.cluster_workers` | 5 | 不同聚类分支的 CPU 进程数 |
 | `community.description_concurrency` | 5 | 社区描述和 LLM fallback 拆分的共享并发 |
 | `agent.tool_concurrency` | 5 | 单个 QA 同一轮允许并发执行的工具数 |
-| `knowledge.concurrency` | 3 | 同时提炼或编译的社区数；一个社区内逐题串行编译 |
+| `knowledge.concurrency` | 3 | 同时筛选问题的社区数；旧提炼/编译入口也使用此上限 |
 | 实验 YAML 的 `concurrency` | 示例及现有数据集模板为 5 | QA 并发数；judge 复用同一个值；阶段内所有 `modes` 合计受此限制 |
 
 这些限制不是简单相乘。比如 QA 并发为 10、`model.concurrency=5` 时，最多同时有 5 个生成请求，其余等待；每题的多个搜索工具还受 embedding 并发约束。不同进程各有自己的限制，同时启动多个实验会叠加请求量，没有跨进程全局限流。
@@ -303,81 +303,60 @@ mkdir -p data/queues/my_batch
 nohup .venv/bin/python scripts/run_benchmark_queue.py --settings benchmark.queue.yaml > data/queues/my_batch/console.log 2>&1 < /dev/null &
 ```
 
-## 6. compile 实验：映射 → 提炼 → 编译 → 问答 → 评测
+## 6. 历史答案 view：映射 → 筛选 → view 问答 → 评测
 
-compile 是叠加在检索之上的可选能力，不是第三个 `retrieval.mode`。可配合普通 community 或 community_fallback 使用，取决于选用哪份社区索引。
+主线采用**历史答案复用＋view 首轮不提供 search**，与服务器 community_view_history_answers_read_only 的检索行为一致。view 是可选功能，CLI mode 仍为 naive/community；使用 fallback 时选择对应的社区索引。
 
-两个独立开关：
+### 6.1 配置
 
-| 配置 | 作用 |
-|---|---|
-| `knowledge.record_questions` | 记录外部问题与实际展示过的叶社区；展示过 view 问题目录的社区也计入，不代表已验证有帮助 |
-| `knowledge.use_compiled` | 初始问题向量匹配 view 问题目录，并启用 `read_view_answers` 和对应说明 |
+复制完整配置为 config.mapping.local.yaml 和 config.view.local.yaml；复制实验配置为 benchmark.mapping.local.yaml 和 benchmark.view.local.yaml。以下只列需要编辑的字段：
 
-记录映射不需要启用新知识。编译内部问答自动关闭这两个开关，避免递归读取自身答案或污染历史问题。提炼只接收问题文本与来源 ID，不接收 gold 或历史生成答案。
-
-### 6.1 准备两份主配置、两份实验配置
-
-在根目录复制完整配置，再编辑对应字段；下面列的是编辑项，不是可替代完整配置的最小文件。
-
-```bash
-cp config.local.yaml config.mapping.local.yaml
-cp config.local.yaml config.compiled.local.yaml
-cp benchmark.example.yaml benchmark.mapping.local.yaml
-cp benchmark.example.yaml benchmark.compiled.local.yaml
-```
-
-| 编辑项 | mapping：记录与编译 | compiled：新知识问答 |
+| 配置 | mapping：记录问答、筛选 | view：新问答 |
 |---|---|---|
-| 主配置 `storage.database` | `data/runs/my_dataset_mapping/index.sqlite3` | `data/runs/my_dataset_compiled/index.sqlite3` |
-| 主配置 `storage.log_file` | `data/runs/my_dataset_mapping/run.log` | `data/runs/my_dataset_compiled/run.log` |
-| `knowledge.record_questions` | `true` | `false` |
-| `knowledge.use_compiled` | `false` | `true` |
-| 实验 `output_dir` | `data/runs/my_dataset_mapping` | `data/runs/my_dataset_compiled` |
-| 实验 `database` / `log_file` | 与对应主配置的 storage 一致 | 与对应主配置的 storage 一致 |
-| 实验 `modes` | `[community]` | `[community]` |
+| 主配置 storage.database | data/runs/my_dataset_mapping/index.sqlite3 | data/runs/my_dataset_view/index.sqlite3 |
+| 主配置 storage.log_file | data/runs/my_dataset_mapping/run.log | data/runs/my_dataset_view/run.log |
+| knowledge.record_questions | true | false |
+| knowledge.use_compiled | false | true |
+| knowledge.history_results | data/runs/my_dataset_mapping/results.jsonl | null |
+| 实验 output_dir | data/runs/my_dataset_mapping | data/runs/my_dataset_view |
+| 实验 database / log_file | 与对应主配置 storage 一致 | 与对应主配置 storage 一致 |
+| 实验 modes | [community] | [community] |
 
-两套配置的服务、embedding、文档处理、建图及社区设置保持一致。使用 fallback 社区时，两边的 `community.llm_split_fallback` 都设为 `true`。以下流程使用同一数据集、QA 范围和模式，测试的是已见问题的知识复用；不等于独立测试集上的泛化评测。
+record_questions 与 use_compiled 是独立开关；后者沿用旧字段名，但也适用于历史答案 view。filter_prompt 默认指向 prompts/knowledge_filter.txt。不同社区的筛选并发由 knowledge.concurrency 控制，QA/judge 并发由实验 YAML 的 concurrency 控制。
 
-普通 `benchmark` 使用实验 YAML 的数据库路径覆盖主配置 storage；独立 `knowledge` 命令直接使用主配置 storage，**所以 mapping 两个路径必须一致**。
+两套配置保持文档、embedding、建图和社区设置兼容；使用 fallback 时两边的 community.llm_split_fallback 都为 true。所有路径相对于其 YAML 文件。独立 knowledge-filter 命令直接读取主配置 storage，因此必须与 mapping 实验数据库一致。
 
-### 6.2 记录问题与叶社区映射
+### 6.2 记录成功问答与叶社区映射
 
-先准备 mapping 索引：
+没有索引时先 index；已有完整兼容索引可以跳过。记录实际展示过的叶社区，不代表这些社区一定有帮助。
 
 ```bash
 .venv/bin/community-view --config config.mapping.local.yaml benchmark --settings benchmark.mapping.local.yaml --stage index
-```
-
-然后只跑一次问答，不必评分：
-
-```bash
 .venv/bin/community-view --config config.mapping.local.yaml benchmark --settings benchmark.mapping.local.yaml --stage ask
+.venv/bin/community-view --config config.mapping.local.yaml benchmark --settings benchmark.mapping.local.yaml --stage judge
 ```
 
-若已有同一图版本下的成功问题映射，可直接进入提炼。未启用记录时跑过的 QA 不会自动追溯生成映射；不要在同一实验目录中途修改开关后混合续跑，应另建记录实验。
+judge 不是筛选必需条件，可以单独运行。筛选只使用 history_results 指定的单个实验，逐条核对 graph_key、问题、外部 ID、run_id、成功状态及最终 assistant 答案。每个问题 ID 只允许一条成功 community 记录；失败题先续跑 ask。community-fallback 在结果中的 mode 也为 community，须通过对应数据库区分。
 
-### 6.3 提炼问题集
+仅有 results.jsonl 不够，还需原数据库中匹配的 runs、question_communities 和 question_sources；没有记录映射的旧 QA 不能直接构建 view。不会跨实验选择最高分答案，gold 和评分不进入筛选或 view 内容。
+
+### 6.3 筛选并原样物化历史答案
 
 ```bash
-.venv/bin/community-view --config config.mapping.local.yaml knowledge --stage plan
+.venv/bin/community-view --config config.mapping.local.yaml knowledge-filter
 ```
 
-LLM 根据社区及成员文档 overview，对历史问题进行相关性筛选、压缩和去重，输出问题及对应的原问题 ID 集合。不要求所有历史问题都相关；无相关问题可以返回空列表。非法格式、重复问题或未知来源 ID 会反馈错误并按 `knowledge.validation_retries` 修正。
+LLM 接收社区信息、完整成员文档 overview、历史问题及 ID，只返回保留的 ID。完全或部分相关的问题保留，完全无关的问题筛掉；不改写、压缩、合并或回答问题。程序按原记录顺序保存问题和实际回答，再生成问题向量。非法 ID/重复 ID 等按 validation_retries 反馈修正。
 
-### 6.4 逐题编译答案
+每社区一个逻辑 view，不设字符上限。沿用 knowledge_views、knowledge_answers 表，无需数据库结构迁移；来源信息保留 run_id 和外部问题 ID。
 
-```bash
-.venv/bin/community-view --config config.mapping.local.yaml knowledge --stage compile
-```
+全部社区的筛选及 embedding 成功后，事务替换当前图版本的整批 view，清除本批未覆盖的旧 view。任何社区失败均不发布本批结果，保留原版本；重跑可复用成功任务。切回旧来源问题集时也会重新发布缓存任务。不同图版本的数据互不覆盖。
 
-每个提炼问题启动独立 Agent loop，使用当前社区与成员文档 overview 作为初始上下文，复用 `prompts/agent.txt` 和 `prompts/question.txt`，可搜索全库正文。不同社区按 `knowledge.concurrency` 并发，社区内逐题执行；成功答案可以断点复用。
+数据库同目录的 knowledge/filter_summary.json 保存 published、成功/失败数、候选/保留数量及 metrics.filter、metrics.embedding；filter_jobs.json 保存逐社区结果与来源。token 和阶段耗时包含筛选及问题 embedding，不包含答案重编译，因为没有该步骤。
 
-一个社区一个逻辑 view，不设字符上限。`knowledge_answers` 保存问题、答案、原问题映射和问题向量；`knowledge_views` 保存社区名称、embedding 配置签名及发布版本。完整社区 view 以事务发布，失败替换不会覆盖上次完整结果。`knowledge --stage all` 只连续执行 plan 和 compile，不包含问答与评测。
+### 6.4 复制索引，再跑 view 问答与评测
 
-### 6.5 复制已编译索引，再运行新知识问答和评测
-
-compiled 使用独立数据库和结果目录。可以用项目的索引复用接口复制 mapping 索引及 view，要求目标数据库和执行记录尚不存在；以下代码不调用模型：
+使用独立数据库及结果目录，目标必须尚不存在。复用操作不调用模型：
 
 ```bash
 .venv/bin/python - <<'PY'
@@ -385,36 +364,44 @@ from community_view.config import Config
 from community_view.experiments.config import BenchmarkConfig
 from community_view.experiments.reuse import clone_index
 source = BenchmarkConfig.load('benchmark.mapping.local.yaml')
-target = BenchmarkConfig.load('benchmark.compiled.local.yaml')
-config = Config.load('config.compiled.local.yaml')
+target = BenchmarkConfig.load('benchmark.view.local.yaml')
+config = Config.load('config.view.local.yaml')
 clone_index(source.database, source.output_dir / 'execution.json', source.dataset_dir, target, config)
 PY
-.venv/bin/community-view --config config.compiled.local.yaml benchmark --settings benchmark.compiled.local.yaml --stage ask
-.venv/bin/community-view --config config.compiled.local.yaml benchmark --settings benchmark.compiled.local.yaml --stage judge
+.venv/bin/community-view --config config.view.local.yaml benchmark --settings benchmark.view.local.yaml --stage ask
+.venv/bin/community-view --config config.view.local.yaml benchmark --settings benchmark.view.local.yaml --stage judge
 ```
 
-新问答首先将原问题与提炼问题向量匹配，取 `question_k` 个符合 `min_question_similarity` 的问题，再按社区去重。Agent 获得这些社区的完整问题目录，**不会直接获得全部答案**。它通过 `read_view_answers(question_ids)` 选择答案；每题已读答案去重，其他缺口可用 `search_chunks` 获取原文。当前允许同一轮同时读 view 和搜索，没有强制先读后搜。
+新问题匹配 view 问题向量，取 question_k=3 个正相似度且余弦 ≥ min_question_similarity=0.2 的问题，再对所属社区去重，展示这些社区的完整问题目录。首轮不预置 chunks、社区 overview 或全部答案。read_view_answers(question_ids) 精确返回选定答案，单次最多 read_answer_limit=8 个，每个 QA 内已读答案去重。
 
-关闭 `use_compiled` 时，不注入任何 view 说明或目录，也不提供 `read_view_answers`。普通社区检索的关联边扩展仍保持原样，但 view 目录是按提炼问题相似度独立选出的，不依赖 chunk 命中文档的所属社区。
+**首轮只提供 read_view_answers，程序也拦截该轮的 search_chunks；第二轮起两工具均可用。**空目录仍遵循此限制，与服务器原实现一致；这不强制 Agent 必须读 view，也不保证空目录时自动进入第二轮。最后一轮仍要求直接回答。
 
-### 6.6 一次性运行知识实验管线
+关闭 use_compiled 后，不注入 view prompt/目录，不提供读取工具，也不限制首轮 search；普通三模式不变。view 目录匹配独立于 chunk 搜索，后续搜索仍使用原社区扩展和去重逻辑。
 
-先完成 mapping 的 `index`，再在 `data/pipelines/my_compile/pipeline.yaml` 放置以下配置（路径相对该文件）：
+### 6.5 完整管线
+
+先准备 mapping 索引，再创建 history.pipeline.local.yaml（路径相对于该文件）：
 
 ```yaml
-mapping_config: ../../../config.mapping.local.yaml
-mapping_settings: ../../../benchmark.mapping.local.yaml
-compiled_config: ../../../config.compiled.local.yaml
-compiled_settings: ../../../benchmark.compiled.local.yaml
+mapping_config: config.mapping.local.yaml
+mapping_settings: benchmark.mapping.local.yaml
+view_config: config.view.local.yaml
+view_settings: benchmark.view.local.yaml
+stage_attempts: 3
+stage_retry_delay_seconds: 30
 ```
 
 ```bash
-.venv/bin/python scripts/run_compiled_benchmark.py --settings data/pipelines/my_compile/pipeline.yaml
+.venv/bin/python scripts/run_history_view_benchmark.py --settings history.pipeline.local.yaml
 ```
 
-该入口串联：**mapping ask → plan → compile → 复制索引 → compiled ask → judge**，不重新入库。若前面的 mapping QA 或编译已按相同配置完成，成功部分可复用。自动管线要求前后数据集、start/count 和 modes 一致；数据库和输出目录必须分开。
+执行 mapping ask → mapping judge → 筛选 → 复制索引 → view ask → view judge。每阶段有限重试；未完成则停止后续步骤，成功记录可复用。状态和各阶段日志保存到管线配置所在目录。两轮使用相同 QA 范围和 [community]，数据库及输出独立；这是已见问题复用实验，不等于独立测试集泛化。
 
-管线保存 `pipeline_status.json`。个别社区提炼/编译失败时会记录数量，仍可用已发布的知识继续问答，其他内容依靠原文搜索；这不代表所有社区都编译成功。源 view 改变后，管线拒绝继续使用旧的 compiled 副本，需要新的目标数据库及输出目录。
+### 6.6 兼容旧重编译流程
+
+保留 knowledge --stage plan/compile/all 及 scripts/run_compiled_benchmark.py，供旧实验显式使用；它们会提炼问题并重新调用 Agent 回答。plan_prompt 仅用于此旧流程的问题提炼。答案编译直接复用普通问答的 agent.txt 和 question.txt，不设置或注入编译专用的额外 prompt。
+
+两种生成方式共享 view 表，每个图版本/社区只有一份当前发布 view；对照实验必须使用独立数据库。旧 view 仍可读取，升级后应使用新问答输出目录，不直接续跑旧 execution.json。
 
 ## 7. 结果、指标和失败续跑
 
@@ -476,7 +463,8 @@ API 失败默认最多额外重试两次并写日志。未返回 usage 时不因
 | `text.py`、`pdf.py`、`overviews.py`、`ingest.py` | 文档解析、累计综合、切片和入库 |
 | `graph.py`、`communities.py`、`community_split.py` | 加权边、递归 Leiden、LLM fallback |
 | `retrieval.py`、`agent.py`、`models.py` | 检索扩展、工具循环、问题级上下文去重 |
-| `knowledge.py`、`knowledge_store.py`、`knowledge_views.py` | 问题提炼、答案编译、发布与读取 |
+| `historical_views.py`、`knowledge_store.py`、`knowledge_views.py` | 历史问答核对、筛选、view 发布和读取 |
+| `knowledge.py` | 兼容旧问题提炼和答案重编译流程 |
 | `store.py`、`metrics.py` | SQLite 与任务级统计 |
 | `experiments/` | prepared 校验、阶段调度、索引复用、QA/评测和汇总 |
 | `scripts/` | 分类别汇总、顺序队列、知识实验管线 |

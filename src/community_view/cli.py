@@ -38,6 +38,7 @@ def parser():
         "knowledge", help="Plan/compile knowledge from saved question-community mappings"
     )
     knowledge.add_argument("--stage", choices=["plan", "compile", "all"], default="all")
+    commands.add_parser("knowledge-filter", help="Filter mapped questions and reuse exact historical answers")
     for name in ("ingest", "build"):
         child = commands.add_parser(name)
         child.add_argument("paths", nargs="+")
@@ -131,6 +132,14 @@ async def run(args):
             config.text.encoding, config.storage.database.parent / "tokenizer_cache"
         )
         client = ModelClient(config, store, text)
+        if args.command == "knowledge-filter":
+            from .historical_views import build_filtered_views
+
+            with (config.storage.database.parent / ".knowledge.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                result = await build_filtered_views(config, store, client)
+            emit(result)
+            return int(result["failed"] > 0)
         if args.command == "knowledge":
             from .knowledge import build_knowledge
 

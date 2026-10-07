@@ -94,7 +94,7 @@ class Agent:
             )
         return name, args
 
-    async def _run_tools(self, calls, state, counts, scope):
+    async def _run_tools(self, calls, state, counts, scope, *, allowed_tools=None):
         slots = asyncio.Semaphore(self.config.agent.tool_concurrency)
 
         async def retrieve(name, args):
@@ -111,6 +111,11 @@ class Agent:
         async with asyncio.TaskGroup() as group:
             for call in calls:
                 try:
+                    if (
+                        allowed_tools is not None
+                        and call["function"]["name"] not in allowed_tools
+                    ):
+                        raise ValueError("Tool is unavailable in this round")
                     name, args = self._prepare_tool(call, counts, scope)
                 except (ValueError, TypeError, KeyError) as exc:
                     pending.append({"error": str(exc)})
@@ -163,13 +168,6 @@ class Agent:
                 ),
             }
         )
-        if scope is not None:
-            messages.append(
-                {
-                    "role": "system",
-                    "content": f"All chunk searches are restricted to doc_ids: {dumps(sorted(scope))}. Community expansion is unrestricted.",
-                }
-            )
         state, counts = QuestionState(), Counter()
         run_id = run_id or uuid.uuid4().hex
         if self.config.knowledge.use_compiled:
@@ -217,9 +215,12 @@ class Agent:
             for round_index in range(self.config.agent.max_rounds):
                 count_round()
                 last = round_index == self.config.agent.max_rounds - 1
+                tools = tool_definitions(self.views is not None)
+                if self.views is not None and round_index == 0:
+                    tools = [t for t in tools if t["function"]["name"] == "read_view_answers"]
                 message = await self.client.chat(
                     messages,
-                    tools=tool_definitions(self.views is not None),
+                    tools=tools,
                     force_final=last,
                 )
                 messages.append(message)
@@ -233,7 +234,13 @@ class Agent:
                     return Answer(run_id, answer, round_index + 1)
                 if last:
                     raise ValueError("Model ignored final-round tool_choice=none")
-                messages.extend(await self._run_tools(calls, state, counts, scope))
+                messages.extend(
+                    await self._run_tools(
+                        calls, state, counts, scope,
+                        allowed_tools={"read_view_answers"}
+                        if self.views is not None and round_index == 0 else None,
+                    )
+                )
                 self.store.save_run(run_id, self.retriever.mode, "running", messages)
                 record("running")
         except BaseException:

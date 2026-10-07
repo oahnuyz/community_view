@@ -22,7 +22,7 @@ from .retrieval import Retriever
 log = logging.getLogger(__name__)
 
 
-def initial_context(retriever, community):
+def planning_context(retriever, community):
     return {
         "communities": [
             {
@@ -80,7 +80,7 @@ async def build_knowledge(config, store, client, stage="all"):
     c = config.knowledge
     plan_prompt = c.plan_prompt.read_text()
     shared = {
-        "format": "question_views_v1",
+        "format": "question_views_v2_community_compile",
         "graph": retriever.graph_key,
         "model": config.model.model_dump(),
         "embedding": config.embedding.model_dump(),
@@ -108,7 +108,7 @@ async def build_knowledge(config, store, client, stage="all"):
         }
         if job["status"] in {"complete", "skipped"}:
             return job
-        context = initial_context(retriever, leaves[identity])
+        context = planning_context(retriever, leaves[identity])
         sources = {q["source_question_id"]: q for q in questions}
 
         async def measured(label, action):
@@ -202,7 +202,6 @@ async def build_knowledge(config, store, client, stage="all"):
                             lambda: Agent(original, store, client, retriever).ask(
                                 item["question"],
                                 run_id=run_id,
-                                initial_context=context,
                                 track_question=False,
                             ),
                         )

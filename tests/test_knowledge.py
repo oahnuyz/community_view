@@ -270,8 +270,9 @@ async def test_catalog_then_selective_read_then_search_with_isolated_dedup(
     async def chat(messages, **kwargs):
         inputs.append(list(messages))
         names = {t["function"]["name"] for t in kwargs["tools"]}
-        assert names == {"search_chunks", "read_view_answers"}
         tool_messages = [m for m in messages if m["role"] == "tool"]
+        assert names == ({"read_view_answers"} if not tool_messages else
+                         {"search_chunks", "read_view_answers"})
         if not tool_messages:
             catalog = json.loads(messages[-1]["content"])["view_catalog"]
             assert len(catalog) == 1 and len(catalog[0]["questions"]) == 2
@@ -297,7 +298,7 @@ async def test_catalog_then_selective_read_then_search_with_isolated_dedup(
         first, search, again = [json.loads(m["content"]) for m in tool_messages]
         assert first["answers"][0]["answer"] == "ANSWER_SECRET_2"
         assert "ANSWER_SECRET_1" not in json.dumps(messages)
-        assert search["chunks"]
+        assert search == {"error": "Tool is unavailable in this round"}
         assert again["answers"] == [] and again["already_read"] == ["A-Q0002"]
         return {"role": "assistant", "content": "done"}
 
